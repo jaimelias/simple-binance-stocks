@@ -1,6 +1,6 @@
 # simple-binance-stocks
 
-A JavaScript library for Binance Stocks and ETFs, with a shared asynchronous API for Node.js and Google Apps Script. Order funding uses **USDC**. Equity prices and notionals retain Binance's documented **USD** units. The library and build use no external packages.
+A JavaScript library for Binance Stocks and ETFs, with a shared asynchronous API for Node.js and Google Apps Script. Order funding uses **USDC**. Equity prices and notionals retain Binance's documented **USD** units. The library has no external runtime dependencies; webpack builds the Google Apps Script artifact.
 
 The library covers the 16 Binance Stocks REST endpoints under `/sapi/v1/equity/`: market data, order placement and queries, cancellations, tokenized conversions, disclaimer acceptance, and listen-key creation or renewal.
 
@@ -14,12 +14,7 @@ Use plain uppercase tickers such as `AAPL` and `SPY`. Symbol availability and tr
 
 ## Node.js
 
-From this checkout:
-
-```sh
-npm run build
-npm test
-```
+Node.js uses the ESM entry at `index.js` directly and requires no build.
 
 ```js
 import BinanceStocks from 'simple-binance-stocks';
@@ -35,12 +30,6 @@ console.log(quote); // Binance's quote object, or null when no quote is availabl
 
 const rules = await stocks.getSymbolInfo();
 console.log(rules);
-```
-
-CommonJS is also supported after building:
-
-```js
-const BinanceStocks = require('simple-binance-stocks');
 ```
 
 When trying the examples directly inside this repository, use `import BinanceStocks from './index.js'` for ESM. Keep credentials outside source files. A client with only `apiKey` can call market-data methods and `createListenKey()`.
@@ -239,7 +228,7 @@ The shared request layer preserves HTTP status, Binance error code/message, and 
 | `ResponseError` | A read failed or its response could not be parsed. |
 | `ValidationError`, `TypeError`, `RangeError` | Invalid input or unsupported configuration. |
 
-Error classes can be imported by name from the package or accessed as properties on the CommonJS export.
+In Node.js, import error classes by name from the package, such as `import { RateLimitError } from 'simple-binance-stocks'`. In Apps Script, access them on the constructor, such as `BinanceStocks.RateLimitError`.
 
 The client tracks rate-limit responses and honors `Retry-After` when provided, using `rateLimitFallbackMs` when a fallback is needed. It does not automatically retry requests. `getRateLimitState()` returns `{ lockedUntil, retryAfterMs, usage }`; wait for the cooldown before making another request after a rate-limit error. Endpoint and account limits still apply across other clients and processes.
 
@@ -247,7 +236,7 @@ Never log credentials, signatures, or signed request URLs. Application logging s
 
 ## Google Apps Script
 
-Build the bundle with `npm run build`, then copy `dist/google-apps-script-build.js` into a script file in an Apps Script project using V8. The bundle exposes the `BinanceStocks` constructor and a `BinanceStocksLibrary` namespace containing its exports and error types. It has no Node.js runtime dependency.
+After installing development dependencies with `npm ci`, build with `npm run build`, then paste the contents of `dist/BinanceStocks.min.js` into a script file in an Apps Script project using V8. This production bundle is exclusively for Google Apps Script. It exposes the `BinanceStocks` constructor directly and error types such as `BinanceStocks.RateLimitError`.
 
 Store `BINANCE_API_KEY` and `BINANCE_API_SECRET` in script properties for a private script project, or use user properties when each user has separate credentials.
 
@@ -269,10 +258,15 @@ Use top-level function declarations for Apps Script entry points. The adapter us
 
 ## Development
 
+Building and testing require Node.js 20.9 or later and the webpack development dependencies:
+
 ```sh
+npm ci
 npm run build
 npm test
 ```
+
+`webpack.config.js` bundles `src/googleAppsScript.js` into the single production file `dist/BinanceStocks.min.js`. It preserves error class names and requires no Node.js modules or browser chunk loader in Apps Script. Regenerate the artifact after changing library code.
 
 Tests run offline with dummy credentials and mocked HTTP, time, signing, and Apps Script services. The test command builds and checks the Apps Script artifact as well as the shared API and adapters. It does not load local trading credentials or submit live orders.
 

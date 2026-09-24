@@ -6,7 +6,9 @@ This library targets Node.js and the Google Apps Script V8 runtime. Keep shared 
 
 - V8 supports modern JavaScript syntax, including arrow functions and `async`/`await`. Apps Script does not support ES module `import`/`export` directly, so bundle the library and its dependencies into a single script file for Apps Script. Keep Node-only modules and browser globals out of that bundle.
 - Expose the bundled library under a stable global name. Define Apps Script entry points such as triggers, menus, `doGet`, and `doPost` as top-level `function` declarations so Apps Script can discover them.
-- Avoid private class fields and static field declarations, which Apps Script V8 does not support. Use closures or `WeakMap` for credentials. The generated artifact exposes `BinanceStocks` and the exported error types through `BinanceStocksLibrary`.
+- Avoid private class fields and static field declarations, which Apps Script V8 does not support. Use closures or `WeakMap` for credentials. The generated artifact exposes the `BinanceStocks` constructor and error types as its properties, such as `BinanceStocks.RateLimitError`.
+- Run `npm run build` to generate `dist/BinanceStocks.min.js`, then paste its contents into a script file in a V8 project. This production bundle is exclusively for Apps Script. Node.js uses the ESM entry at `index.js` directly.
+- Webpack uses `src/googleAppsScript.js` as its entry and exports its default constructor through a top-level `var BinanceStocks`. The configuration targets ES2020, disables chunk loading, and preserves class names so minification does not change `Error.name`. Webpack does not transpile unsupported source syntax; keep the shared code within the Apps Script runtime's limitations.
 - Apps Script has no global `fetch`, Node `crypto`, or standard timers. Its `UrlFetchApp` calls block even inside an `async` function. Use `Utilities.sleep` only when a bounded wait is needed; do not assume a Node-style event loop.
 
 ## HTTP and signing
@@ -24,6 +26,8 @@ This library targets Node.js and the Google Apps Script V8 runtime. Keep shared 
 ## References
 
 - [Apps Script V8 runtime and limitations](https://developers.google.com/apps-script/guides/v8-runtime)
+- [Webpack library exports](https://webpack.js.org/configuration/output/#outputlibraryexport)
+- [Webpack minification options](https://webpack.js.org/configuration/optimization/#optimizationminimizeoptions)
 - [URL Fetch service](https://developers.google.com/apps-script/reference/url-fetch/url-fetch-app)
 - [Utilities HMAC-SHA256](https://developers.google.com/apps-script/reference/utilities/utilities)
 - [Properties service](https://developers.google.com/apps-script/guides/properties)
