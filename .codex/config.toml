@@ -1,0 +1,17 @@
+# my-project/.codex/config.toml
+sandbox_mode = "read-only"
+approval_policy = "on-request"
+
+default_permissions = "workspace-filtered"
+
+[permissions.workspace-filtered]
+extends = ":workspace"
+
+[permissions.workspace-filtered.filesystem]
+glob_scan_max_depth = 12
+
+[permissions.workspace-filtered.filesystem.":workspace_roots"]
+"**/vendor/**" = "deny"
+"**/node_modules/**" = "deny"
+"**/.git/**" = "deny"
+"**/dist/**" = "deny"
