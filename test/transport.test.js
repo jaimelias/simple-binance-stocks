@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac, webcrypto } from 'node:crypto';
 import Transport from '../src/transport.js';
+import { endpoints } from '../src/endpoints.js';
 import { BinanceAPIError, RateLimitError, UnknownExecutionError, ResponseError, ValidationError } from '../src/errors.js';
 
 const API_KEY = 'dummy-api-key';
@@ -54,6 +55,36 @@ test('custom signer supports encoded Ed25519-style signatures without an HMAC se
   await transport.request({ path: '/sapi/v1/equity/order/open-orders' });
   assert.equal(payload, 'recvWindow=5000&timestamp=1800000000000');
   assert.equal(url, `https://api.binance.com/sapi/v1/equity/order/open-orders?${payload}&signature=signature%2B%2F%3D`);
+});
+
+test('Funding Wallet read-only POST signs the exact payload and requires an array response', async () => {
+  let sent;
+  const wallet = [{ asset: 'USDC', free: '1.5', locked: '0', freeze: '0', withdrawing: '0' }];
+  const transport = create({ fetch: async (url, options) => { sent = { url, options }; return http(wallet); } });
+  assert.deepEqual(await transport.request({ ...endpoints.fundingWallet, params: { asset: 'USDC' } }), wallet);
+  const payload = 'asset=USDC&recvWindow=5000&timestamp=1800000000000';
+  const signature = createHmac('sha256', API_SECRET).update(payload).digest('hex');
+  assert.equal(sent.url, `https://api.binance.com/sapi/v1/asset/get-funding-asset?${payload}&signature=${signature}`);
+  assert.equal(sent.options.method, 'POST');
+  assert.deepEqual(sent.options.headers, { 'X-MBX-APIKEY': API_KEY });
+  const malformed = create({ fetch: async () => http({ asset: 'USDC' }) });
+  await assert.rejects(malformed.request({ ...endpoints.fundingWallet, params: { asset: 'USDC' } }), (error) => error instanceof ResponseError && !(error instanceof UnknownExecutionError));
+});
+
+test('Funding Wallet POST failures do not claim an uncertain mutation', async () => {
+  for (const fetch of [
+    async () => { throw new Error('socket timed out'); },
+    async () => http({ code: -1000, msg: 'Internal failure' }, 503),
+  ]) {
+    const transport = create({ fetch });
+    await assert.rejects(transport.request({ ...endpoints.fundingWallet, params: { asset: 'USDC' } }), (error) =>
+      error instanceof BinanceAPIError && !(error instanceof UnknownExecutionError));
+  }
+});
+
+test('API key validation can run before a metadata cache hit', () => {
+  assert.doesNotThrow(() => create().assertApiKey());
+  assert.throws(() => create({ apiKey: undefined }).assertApiKey(), ValidationError);
 });
 
 test('per-request recvWindow overrides the configured default', async () => {
@@ -253,6 +284,7 @@ test('validates request configuration and reserved parameters before transport',
   for (const params of [{ signature: 'wrong' }, { timestamp: 1 }, { recvWindow: 60001 }, { amount: Infinity }, { value: {} }, { value: null }]) await assert.rejects(transport.request({ path: PATH, params }), ValidationError);
   await assert.rejects(transport.request({ path: `${PATH}?signature=wrong` }), ValidationError);
   await assert.rejects(transport.request({ path: PATH, security: 'NONE' }), ValidationError);
+  await assert.rejects(transport.request({ path: PATH, readOnly: 'yes' }), ValidationError);
 });
 
 test('Apps Script uses native services with identical HMAC bytes and handles errors', async (context) => {

@@ -70,11 +70,11 @@ test('Apps Script artifact loads without Node/browser services and performs sign
   runInNewContext(code, sandbox, { filename: 'BinanceStocks.min.js', timeout: 2000 })
   assert.equal(typeof sandbox.BinanceStocks, 'function')
   assert.equal(typeof sandbox.BinanceStocks.RateLimitError, 'function')
-  const client = new sandbox.BinanceStocks({ apiKey, apiSecret, symbol: 'AAPL', now: () => 1800000000000 })
-  const quote = await client.getQuote()
+  const client = new sandbox.BinanceStocks({ apiKey, apiSecret, now: () => 1800000000000 })
+  const quote = await client.getQuote('AAPL')
   assert.equal(quote.bidPrice, '100.00')
   assert.equal(new URL(requests[0].url).searchParams.has('signature'), false)
-  const result = await client.createLimitOrder({ amountInUSD: 0.3, entryPrice: '0.10', tradingSession: 'RTH' })
+  const result = await client.createLimitOrder({ symbol: 'AAPL', amountInUSD: 0.3, entryPrice: '0.10', tradingSession: 'RTH' })
   assert.equal(result.clientOrderId, fixedId)
   const request = requests.at(-1)
   const query = new URL(request.url).searchParams
@@ -86,6 +86,51 @@ test('Apps Script artifact loads without Node/browser services and performs sign
   const encoded = request.url.split('?')[1].split('&signature=')[0]
   assert.equal(query.get('signature'), createHmac('sha256', apiSecret).update(encoded).digest('hex'))
   assert.equal(client.getRateLimitState().usage['x-sapi-used-ip-weight-1m'], '3')
+})
+
+test('Apps Script caches filtered symbol rules but always fetches full exchange info', async () => {
+  const entries = new Map()
+  const writes = []
+  const requests = []
+  const AppsScriptClient = await loadArtifact({
+    CacheService: {
+      getScriptCache: () => ({
+        get: key => entries.get(key) ?? null,
+        put(key, value, ttl) {
+          writes.push({ key, value, ttl })
+          entries.set(key, value)
+        },
+        remove: key => entries.delete(key)
+      })
+    },
+    UrlFetchApp: {
+      fetch(url) {
+        const parsed = new URL(url)
+        requests.push(parsed)
+        assert.equal(parsed.pathname.endsWith('/market/exchangeInfo'), true)
+        const symbol = parsed.searchParams.get('symbol')
+        return gasResponse({
+          timezone: 'UTC',
+          symbols: symbol ? [symbolInfo] : [symbolInfo, { ...symbolInfo, symbol: 'SPY' }]
+        })
+      }
+    }
+  })
+  const client = new AppsScriptClient({ apiKey })
+  assert.equal((await client.getExchangeInfo()).symbols.length, 2)
+  assert.equal((await client.getExchangeInfo()).symbols.length, 2)
+  assert.equal(requests.length, 2)
+  assert.equal(writes.length, 0, 'Full exchange info should never use CacheService.')
+  assert.equal((await client.getSymbolInfo('AAPL')).symbol, 'AAPL')
+  assert.equal((await client.getSymbolInfo('AAPL')).symbol, 'AAPL')
+  assert.equal(requests.length, 3)
+  assert.equal(requests.at(-1).searchParams.get('symbol'), 'AAPL')
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].ttl, 300)
+  assert.deepEqual(JSON.parse(writes[0].value), symbolInfo)
+  await client.getSymbolInfo('AAPL', { refresh: true })
+  assert.equal(requests.length, 4)
+  assert.equal(writes.length, 2)
 })
 
 test('Apps Script can create a key-only listen key without Utilities signing', async () => {
@@ -109,13 +154,13 @@ test('Apps Script can create a key-only listen key without Utilities signing', a
 test('Node ESM entry sizes and signs market orders with Node cryptography', async () => {
   const requests = []
   const client = new BinanceStocks({
-    apiKey, apiSecret, symbol: 'AAPL', now: () => 1800000000000,
+    apiKey, apiSecret, now: () => 1800000000000,
     fetch: async (url, options) => {
       requests.push({ url, options })
       return { status: 200, headers: {}, text: async () => JSON.stringify(bodyFor(url)) }
     }
   })
-  assert.equal((await client.createMarketOrder({ amountInUSD: 100 })).status, 'S')
+  assert.equal((await client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100 })).status, 'S')
   const request = requests.at(-1)
   const query = new URL(request.url).searchParams
   assert.equal(query.get('notional'), '100')
@@ -123,6 +168,44 @@ test('Node ESM entry sizes and signs market orders with Node cryptography', asyn
   assert.equal(query.has('quantity'), false)
   assert.match(query.get('clientOrderId'), /^[a-zA-Z0-9_-]{32,36}$/)
   const payload = request.url.split('?')[1].split('&signature=')[0]
+  assert.equal(query.get('signature'), createHmac('sha256', apiSecret).update(payload).digest('hex'))
+})
+
+test('Apps Script artifact reports trade-derived shares with signed Funding Wallet USDC', async () => {
+  const requests = []
+  const AppsScriptClient = await loadArtifact({
+    Utilities: gasUtilities(),
+    UrlFetchApp: {
+      fetch(url, options) {
+        requests.push({ url, options })
+        const parsed = new URL(url)
+        if (parsed.pathname.endsWith('/trade/history')) return gasResponse({
+          total: 1, page: 1, size: 100,
+          rows: [{ executionId: 'exec-1', symbol: 'NVDA', side: 'BUY', qty: '3', quote: 'USDC' }]
+        })
+        if (parsed.pathname === '/sapi/v1/asset/get-funding-asset') return gasResponse([
+          { asset: 'USDC', free: '900', locked: '100', freeze: '0', withdrawing: '0' }
+        ])
+        if (parsed.pathname.endsWith('/market/quote')) return gasResponse({ symbol: 'NVDA', bidPrice: '300', askPrice: '301' })
+        throw new Error(`Unexpected route: ${parsed.pathname}`)
+      }
+    }
+  })
+  const client = new AppsScriptClient({ apiKey, apiSecret, now: () => 1800000000000 })
+  const report = await client.getPortfolio({ startTime: 0, endTime: 1800000000000 })
+  assert.deepEqual(JSON.parse(JSON.stringify(report)), {
+    totals: { totalUsd: 1900, positionsUsd: 900, cashUsd: 1000 },
+    cash: { USDC: { amount: 1000, quote: 1, usd: 1000, weight: 0.5263 } },
+    positions: { NVDA: {
+      amount: 3, quote: 300, usd: 900, weight: 0.4737
+    } }
+  })
+  const fundingRequest = requests.find(request => new URL(request.url).pathname === '/sapi/v1/asset/get-funding-asset')
+  assert.ok(fundingRequest)
+  assert.equal(fundingRequest.options.method, 'post')
+  const query = new URL(fundingRequest.url).searchParams
+  assert.equal(query.get('asset'), 'USDC')
+  const payload = fundingRequest.url.split('?')[1].split('&signature=')[0]
   assert.equal(query.get('signature'), createHmac('sha256', apiSecret).update(payload).digest('hex'))
 })
 
@@ -153,8 +236,8 @@ test('minified Apps Script artifact enforces a 429 cooldown and resumes after Re
       }
     }
   })
-  const client = new AppsScriptClient({ apiKey, symbol: 'AAPL', now: () => now })
-  await assert.rejects(client.getQuote(), error => {
+  const client = new AppsScriptClient({ apiKey, now: () => now })
+  await assert.rejects(client.getQuote('AAPL'), error => {
     assert.ok(error instanceof AppsScriptClient.RateLimitError)
     assert.equal(error.name, 'RateLimitError')
     assert.equal(error.status, 429)
@@ -168,7 +251,7 @@ test('minified Apps Script artifact enforces a 429 cooldown and resumes after Re
   assert.equal(calls, 1)
   assert.equal(client.getRateLimitState().usage['x-sapi-used-ip-weight-1m'], '99')
   now += 1000
-  await assert.rejects(client.getQuote(), error => {
+  await assert.rejects(client.getQuote('AAPL'), error => {
     assert.ok(error instanceof AppsScriptClient.RateLimitError)
     assert.equal(error.name, 'RateLimitError')
     assert.equal(error.retryAfterMs, 1000)
@@ -177,7 +260,7 @@ test('minified Apps Script artifact enforces a 429 cooldown and resumes after Re
   })
   assert.equal(calls, 1, 'The local cooldown must prevent another HTTP request.')
   now += 1000
-  assert.equal((await client.getQuote()).bidPrice, '100.00')
+  assert.equal((await client.getQuote('AAPL')).bidPrice, '100.00')
   assert.equal(calls, 2)
 })
 
@@ -196,8 +279,8 @@ test('minified Apps Script artifact retains uncertain order IDs and never retrie
         }
       }
     })
-    const client = new AppsScriptClient({ apiKey, apiSecret, symbol: 'AAPL', now: () => 1800000000000 })
-    await assert.rejects(client.createMarketOrder({ amountInUSD: 100, clientOrderId: fixedId }), error => {
+    const client = new AppsScriptClient({ apiKey, apiSecret, now: () => 1800000000000 })
+    await assert.rejects(client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100, clientOrderId: fixedId }), error => {
       assert.ok(error instanceof AppsScriptClient.UnknownExecutionError, outcome)
       assert.ok(error instanceof AppsScriptClient.BinanceAPIError, outcome)
       assert.equal(error.name, 'UnknownExecutionError')

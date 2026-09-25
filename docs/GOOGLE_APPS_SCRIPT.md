@@ -20,6 +20,7 @@ This library targets Node.js and the Google Apps Script V8 runtime. Keep shared 
 ## State and execution
 
 - Read credentials from the appropriate `PropertiesService` store at runtime; never commit or bundle them. Script properties are shared with all users of a script, so restrict project access and use user properties when credentials belong to individual users.
+- Use `CacheService.getScriptCache()` for per-symbol rules returned by `getSymbolInfo(symbol)` (up to 300 seconds) and tokenized-asset metadata (up to 21,600 seconds). `getExchangeInfo()` fetches the complete, unfiltered response every time and does not use CacheService. Cache entries may disappear early, and a value cannot exceed 100 KB. The library should return oversized metadata without storing it. `getSymbolInfo(symbol, { refresh: true })` and `getTokenizedAssets({ refresh: true })` bypass their caches. Quotes, trade histories and wallet balances must be fetched afresh.
 - Respect Apps Script execution and URL Fetch quotas. Chunk long jobs and use installable or time-driven triggers when appropriate. Use `LockService` around shared mutable state that concurrent executions could change.
 - Keep tests offline with mocked `UrlFetchApp`, `Utilities`, and `PropertiesService`. Also build and validate the generated Apps Script bundle: source-level mocks alone cannot catch missing globals, unresolved modules, or incorrect global exports.
 
@@ -31,5 +32,6 @@ This library targets Node.js and the Google Apps Script V8 runtime. Keep shared 
 - [URL Fetch service](https://developers.google.com/apps-script/reference/url-fetch/url-fetch-app)
 - [Utilities HMAC-SHA256](https://developers.google.com/apps-script/reference/utilities/utilities)
 - [Properties service](https://developers.google.com/apps-script/guides/properties)
+- [Cache service](https://developers.google.com/apps-script/reference/cache/cache)
 - [Lock service](https://developers.google.com/apps-script/reference/lock)
 - [Apps Script quotas](https://developers.google.com/apps-script/guides/services/quotas)

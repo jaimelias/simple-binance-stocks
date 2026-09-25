@@ -25,6 +25,7 @@
 
 - `index.js` supplies Node.js cryptography; `src/BinanceStocks.js` contains the portable public API. Keep route definitions in `src/endpoints.js`, HTTP and signing in `src/transport.js`, and sizing and trading-rule validation in `src/orders.js`.
 - `src/decimal.js` provides exact decimal operations without external dependencies. Node.js consumes the ESM entry at `index.js` directly. `webpack.config.js` builds `src/googleAppsScript.js` into `dist/BinanceStocks.min.js` exclusively for Google Apps Script; regenerate that artifact after source changes.
+- It is not allowed to edit `dist/BinanceStocks.min.js`, all changes in should be executed with the command `npm run build`.
 - The Apps Script bundle exposes a directly constructible `BinanceStocks` global with error classes such as `BinanceStocks.RateLimitError`. Preserve error class names during minification. Keep the bundle self-contained, without module imports or a browser/Node chunk loader.
 - Keep request encoding, authentication, signing, HTTP transport, rate-limit handling, and error parsing in shared code with runtime-specific adapters. Keep Node-only dependencies out of code bundled for Apps Script.
 - Apply each endpoint's security type: Stocks `MARKET_DATA` requires `X-MBX-APIKEY` but no signature; `TRADE` and `USER_DATA` require signed requests; `USER_STREAM` listen-key management uses an API key without a signature. Do not treat market data as anonymous.

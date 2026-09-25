@@ -2,7 +2,7 @@
 
 A JavaScript library for Binance Stocks and ETFs, with a shared asynchronous API for Node.js and Google Apps Script. Order funding uses **USDC**. Equity prices and notionals retain Binance's documented **USD** units. The library has no external runtime dependencies; webpack builds the Google Apps Script artifact.
 
-The library covers the 16 Binance Stocks REST endpoints under `/sapi/v1/equity/`: market data, order placement and queries, cancellations, tokenized conversions, disclaimer acceptance, and listen-key creation or renewal.
+The library covers the 16 Binance Stocks REST endpoints under `/sapi/v1/equity/`: market data, order placement and queries, cancellations, tokenized conversions, disclaimer acceptance, and listen-key creation or renewal. It also reads USDC from Binance's Funding Wallet endpoint.
 
 ## Requirements
 
@@ -22,17 +22,16 @@ import BinanceStocks from 'simple-binance-stocks';
 const stocks = new BinanceStocks({
   apiKey: process.env.BINANCE_API_KEY,
   apiSecret: process.env.BINANCE_API_SECRET,
-  symbol: 'AAPL',
 });
 
-const quote = await stocks.getQuote();
+const quote = await stocks.getQuote('AAPL');
 console.log(quote); // Binance's quote object, or null when no quote is available.
 
-const rules = await stocks.getSymbolInfo();
+const rules = await stocks.getSymbolInfo('SPY');
 console.log(rules);
 ```
 
-When trying the examples directly inside this repository, use `import BinanceStocks from './index.js'` for ESM. Keep credentials outside source files. A client with only `apiKey` can call market-data methods and `createListenKey()`.
+When trying the examples directly inside this repository, use `import BinanceStocks from './index.js'` for ESM. Keep credentials outside source files. A client with only `apiKey` can call market-data methods and `createListenKey()`. The constructor does not accept a `symbol`; pass a ticker to each symbol-specific call. The same client can query or trade multiple tickers.
 
 ## Order sizing
 
@@ -54,6 +53,7 @@ The following call places a real order when run with valid trading credentials:
 
 ```js
 const acknowledgement = await stocks.createLimitOrder({
+  symbol: 'AAPL',
   side: 'BUY',
   amountInUSD: 100,
   entryPrice: '180.50',
@@ -72,6 +72,7 @@ console.log(order.status);
 
 ```js
 const acknowledgement = await stocks.createMarketOrder({
+  symbol: 'AAPL',
   side: 'BUY',
   amountInUSD: 100,
   clientOrderId: 'stock-example-market-buy-00000001',
@@ -118,6 +119,7 @@ const clientOrderId = 'stock-reconcile-limit-buy-000001';
 
 try {
   await stocks.createLimitOrder({
+    symbol: 'AAPL',
     side: 'BUY',
     amountInUSD: 100,
     entryPrice: '180.50',
@@ -136,7 +138,7 @@ Responses preserve Binance's field names and optional fields. In order detail, `
 
 ## Public API
 
-Every network method returns a Promise. Options shown as `{}` may be omitted. Methods return Binance response data without converting decimal strings into floating-point values.
+Every network method returns a Promise. Options shown as `{}` may be omitted. Direct endpoint methods return Binance response data without converting decimal strings into floating-point values. Wallet methods return calculated decimal amounts as strings; `getPortfolio()` returns numbers for its simple report.
 
 ### Client options
 
@@ -144,7 +146,6 @@ Every network method returns a Promise. Options shown as `{}` may be omitted. Me
 const stocks = new BinanceStocks({
   apiKey: process.env.BINANCE_API_KEY,
   apiSecret: process.env.BINANCE_API_SECRET,
-  symbol: 'AAPL',             // Optional default ticker.
   quoteAsset: 'USDC',          // Default; other assets are rejected.
   recvWindow: 5000,            // Milliseconds; maximum 60000.
   baseUrl: 'https://api.binance.com',
@@ -154,30 +155,48 @@ const stocks = new BinanceStocks({
 
 The Node.js entry point supplies native HTTP and cryptography adapters. For testing or another host, the constructor also accepts `fetch`, `crypto`, `now`, and `sign`. A custom `sign(payload)` callback must sign the exact encoded string passed to it and return the signature expected by Binance. HMAC-SHA256 is included; alternate signing schemes require an appropriate custom signer. Request timestamps are generated automatically. The default clock is the host clock, so keep it synchronized.
 
+#### `baseUrl` and HTTPS proxies
+
+`baseUrl` defaults to `https://api.binance.com`. Set it to the HTTPS origin of a reverse proxy when requests must pass through your own server:
+
+```js
+const stocks = new BinanceStocks({
+  apiKey,
+  apiSecret,
+  baseUrl: 'https://stocks-proxy.example.com',
+});
+```
+
+The value must be an HTTPS origin. A hostname, optional port, and optional trailing slash are accepted; credentials, a path, query string, or fragment are rejected. The client appends the documented endpoint path (`/sapi/v1/equity/...` or `/sapi/v1/asset/get-funding-asset`) and its encoded parameters to that origin. `baseUrl` does not configure an HTTP or SOCKS forward proxy.
+
+A reverse proxy must forward the request method, path, raw query string, and `X-MBX-APIKEY` header without changing the signed query bytes. Return the upstream status, body, and response headers, especially `Retry-After` and rate-limit usage headers. The API secret stays in the client for signing, but the proxy receives the API key and signed requests, so use a trusted proxy. The client rejects HTTP redirects.
+
+The [Binance Stocks Quick Start](https://developers.binance.com/en/docs/products/stocks/quick-start) shows the production URL; the Stocks documentation does not currently describe a dedicated testnet. Changing `baseUrl` does not create a test environment. If the proxy forwards to production, order calls can place real trades. Use mocked transport for offline tests.
+
 ### Market data
 
 | Method | Result |
 | --- | --- |
-| `getExchangeInfo({ symbol } = {})` | Exchange information, optionally filtered by ticker. An unknown filter can return an empty `symbols` array. |
-| `getSymbolInfo(symbol = this.symbol)` | Rules for one ticker. |
-| `getQuote(symbol = this.symbol)` | Latest quote object, or `null` for Binance's empty successful response. |
-| `getTokenizedAssets()` | Tokenized-asset mappings. |
+| `getExchangeInfo()` | Full, unfiltered exchange information from Binance. Each call fetches current data. |
+| `getSymbolInfo(symbol, { refresh } = {})` | Rules for one required ticker, fetched through the exchange-info symbol filter. Set `refresh: true` to bypass the per-symbol cache. |
+| `getQuote(symbol)` | Latest quote object for one required ticker, or `null` for Binance's empty successful response. |
+| `getTokenizedAssets({ refresh } = {})` | Tokenized-asset mappings. Set `refresh: true` to bypass cached data. |
 
-These endpoints use the API key without a signature. The client does not cache exchange information or quotes.
+These endpoints use the API key without a signature. `getExchangeInfo()` accepts no symbol or refresh options; it fetches the full response each time and does not cache it. Valid, nonempty symbol rules from `getSymbolInfo()` are cached by ticker for up to 300 seconds; tokenized-asset mappings are cached for up to 21,600 seconds (six hours). The cache is per client in Node.js and script-wide through `CacheService` in Apps Script. `refresh: true` on a cached method fetches fresh data. Order methods always fetch current exchange rules before placement. Apps Script may evict entries early. Quotes are never cached.
 
 ### Trading
 
 | Method | Parameters |
 | --- | --- |
-| `createLimitOrder(options)` | `amountInUSD`, `entryPrice`, `tradingSession`; optional `symbol`, `side` (default `BUY`), `timeInForce` (default `DAY`), `walletType`, `tokenize`, `clientOrderId`, `recvWindow`. |
-| `createMarketOrder(options)` | `amountInUSD`; optional `symbol`, `side` (default `BUY`), `timeInForce` (default `DAY`), `walletType`, `tokenize`, `clientOrderId`, `recvWindow`. |
-| `placeOrder(params)` | `orderType` and the fields required by the combination above; optional `symbol` (client default), `side` (default `BUY`), `quoteAsset`, `timeInForce` (default `DAY`), `walletType`, `tokenize`, `clientOrderId`, `recvWindow`. |
+| `createLimitOrder(options)` | Required `symbol`, `amountInUSD`, `entryPrice`, `tradingSession`; optional `side` (default `BUY`), `timeInForce` (default `DAY`), `walletType`, `tokenize`, `clientOrderId`, `recvWindow`. |
+| `createMarketOrder(options)` | Required `symbol`, `amountInUSD`; optional `side` (default `BUY`), `timeInForce` (default `DAY`), `walletType`, `tokenize`, `clientOrderId`, `recvWindow`. |
+| `placeOrder(params)` | Required `symbol`, `orderType`, and the fields required by the combination above; optional `side` (default `BUY`), `quoteAsset`, `timeInForce` (default `DAY`), `walletType`, `tokenize`, `clientOrderId`, `recvWindow`. |
 | `getOrder({ orderId, clientOrderId, recvWindow })` | Provide an `orderId` or `clientOrderId`. |
 | `getOpenOrders({ recvWindow } = {})` | All open orders for the account. |
 | `getOrderHistory(options)` | Required `startTime`, `endTime`; optional `symbol`, `orderType`, `side`, `orderStatus`, `current`, `size`, `recvWindow`. |
 | `getTradeHistory(options)` | Required `startTime`, `endTime`; optional `symbol`, `side`, `orderId`, `current`, `size`, `recvWindow`. |
 | `cancelOrder({ orderId, recvWindow })` | Cancel one order. |
-| `cancelAllOrders({ recvWindow } = {})` | Cancel all open orders for the account. This is not limited to the client's default symbol. |
+| `cancelAllOrders({ recvWindow } = {})` | Cancel all open orders for the account, across all symbols. |
 
 `walletType` is `CARD` (Binance's default) or `MAIN` for buys; sells settle to `CARD`. `tokenize` defaults to `true` at Binance and only affects supported symbols. Check `getTokenizedAssets()` before relying on tokenized settlement.
 
@@ -192,6 +211,33 @@ const history = await stocks.getOrderHistory({
   size: 20,
 });
 ```
+
+### Wallets and portfolio report
+
+| Method | Result |
+| --- | --- |
+| `getEquityWallet({ startTime, endTime, recvWindow } = {})` | Trade-derived share estimate by ticker, for example `{ NVDA: { amount: '3' } }`. The default time range starts at Unix time `0` and ends at the current client time. |
+| `getFundingWallet({ recvWindow } = {})` | Current Funding Wallet USDC, for example `{ USDC: { free: '900', locked: '100', freeze: '0', withdrawing: '0', amount: '1000' } }`. `amount` is `free + locked`. |
+| `getPortfolio({ startTime, endTime, recvWindow } = {})` | `{ totals, cash, positions }` report combining those wallets with a fresh best bid quote for each equity. |
+
+`getEquityWallet()` pages through `/sapi/v1/equity/trade/history` at 100 executions per page, adds BUY quantities, subtracts SELL quantities, and counts each `executionId` only once. It omits tickers whose net amount is zero. Its result is an **estimate from executions**, not a verified account balance. Holdings acquired before the requested history window, transfers, stock-token mint/redeem, settlement and other adjustments can make it differ from actual holdings. Use a `startTime` early enough to cover the trading history needed for the report. The method rejects incomplete pagination or a negative net share estimate. Neither wallet nor trade history is cached.
+
+`getFundingWallet()` reads the signed `POST /sapi/v1/asset/get-funding-asset` endpoint with `asset: 'USDC'`. It reports the Binance **Funding Wallet**, not the Spot balance. An empty filtered response yields a zero USDC balance; a malformed response raises an error. `getPortfolio()` always includes `cash.USDC`, including when its amount is zero. Other assets in the Funding Wallet are excluded. Binance may default equity BUY funding to `CARD` and allows `MAIN`, so a report based on Funding Wallet USDC is not a complete account-wide cash balance.
+
+```js
+const portfolio = await stocks.getPortfolio();
+// {
+//   totals: { totalUsd: 6805, positionsUsd: 900, cashUsd: 5905 },
+//   cash: {
+//     USDC: { amount: 5905, quote: 1, usd: 5905, weight: 0.8677 }
+//   },
+//   positions: {
+//     NVDA: { amount: 3, quote: 300, usd: 900, weight: 0.1323 }
+//   }
+// }
+```
+
+Each position's `usd` is its estimated share amount multiplied by the current best bid in Binance's USD price units. This is a current-value estimate, not historical purchase cost or a guaranteed sale price. `totals.positionsUsd` sums equity values, `totals.cashUsd` is the Funding Wallet USDC value, and `totals.totalUsd` sums both. Each `weight` is the item's `usd` divided by `totals.totalUsd`, rounded to four decimal places. If any equity quote is missing or invalid, `totals.totalUsd`, `totals.positionsUsd`, and all weights are `null`, because a complete valuation is unavailable; that position also has `quote: null` and `usd: null`. `totals.cashUsd` remains available. A zero denominator gives a `null` weight. `cash.USDC.usd` uses a simple 1:1 **reporting assumption**; the library does not convert Binance's USD prices into USDC. Portfolio values are JavaScript numbers for reporting and may lose decimal precision; use the wallet methods for exact decimal strings.
 
 ### Tokenized conversions
 
@@ -214,7 +260,7 @@ Conversions are asynchronous: mint/redeem responses contain an `issuerRequestId`
 | `createListenKey({ recvWindow } = {})` | Creates a listen key or renews the active key for the account; returns `{ listenKey }`. Uses an API key and timestamp without a signature. |
 | `getRateLimitState()` | Returns the client's current rate-limit state. |
 
-Read the applicable Binance disclaimer before explicitly calling `acceptDisclaimer()`. A listen key is available for an external WebSocket consumer; this package does not open WebSocket connections. Binance's Stocks REST catalog does not provide balance, positions, or historical-candle endpoints, so those methods are not invented by this library.
+Read the applicable Binance disclaimer before explicitly calling `acceptDisclaimer()`. A listen key is available for an external WebSocket consumer; this package does not open WebSocket connections. Binance's Stocks REST catalog does not provide a current equity-position endpoint; `getEquityWallet()` therefore derives an estimate from trade history.
 
 ## Errors and rate limits
 
@@ -246,10 +292,9 @@ async function inspectStockQuote() {
   const stocks = new BinanceStocks({
     apiKey: properties.getProperty('BINANCE_API_KEY'),
     apiSecret: properties.getProperty('BINANCE_API_SECRET'),
-    symbol: 'AAPL',
   });
 
-  const quote = await stocks.getQuote();
+  const quote = await stocks.getQuote('AAPL');
   console.log(quote);
 }
 ```

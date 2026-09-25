@@ -152,7 +152,14 @@ export default class Transport {
     return state.lastResponse ? { ...state.lastResponse, headers: { ...state.lastResponse.headers } } : null;
   }
 
-  async request({ path, method = 'GET', security = 'USER_DATA', params = {}, allowEmpty = false, validateResponse } = {}) {
+  assertApiKey() {
+    const state = transportStates.get(this);
+    if (typeof state.apiKey !== 'string' || state.apiKey.length === 0) {
+      throw new ValidationError('apiKey is required for Binance Stocks requests.');
+    }
+  }
+
+  async request({ path, method = 'GET', security = 'USER_DATA', params = {}, allowEmpty = false, validateResponse, readOnly = false } = {}) {
     const state = transportStates.get(this);
     if (typeof path !== 'string' || !/^\/sapi\/[A-Za-z0-9/_-]+$/.test(path) || path.includes('//')) {
       throw new ValidationError('path must be an absolute SAPI endpoint without query parameters.');
@@ -160,7 +167,8 @@ export default class Transport {
     if (!METHODS.has(method)) throw new ValidationError('Unsupported HTTP method.');
     if (!SECURITIES.has(security)) throw new ValidationError('Unsupported endpoint security type.');
     if (validateResponse !== undefined && typeof validateResponse !== 'function') throw new ValidationError('validateResponse must be a function.');
-    if (typeof state.apiKey !== 'string' || state.apiKey.length === 0) throw new ValidationError('apiKey is required for Binance Stocks requests.');
+    if (typeof readOnly !== 'boolean') throw new ValidationError('readOnly must be a boolean.');
+    this.assertApiKey();
     if ((!state.gas && typeof state.fetch !== 'function') || (state.gas && typeof globalThis.UrlFetchApp.fetch !== 'function')) {
       throw new ValidationError('Configure a fetch adapter or run inside a supported Node.js or Apps Script environment.');
     }
@@ -203,7 +211,7 @@ export default class Transport {
     const encoded = signature === undefined ? payload : `${payload}&signature=${encode(signature)}`;
     const url = `${state.baseUrl}${path}${encoded ? `?${encoded}` : ''}`;
     const clean = sanitizer([state.apiKey, state.apiSecret, signature]);
-    const mutation = method !== 'GET';
+    const mutation = method !== 'GET' && !readOnly;
     const identifiers = clean({ clientOrderId: params.clientOrderId, orderId: params.orderId, issuerRequestId: params.issuerRequestId });
     const context = { path, method, ...identifiers };
     let status = null;

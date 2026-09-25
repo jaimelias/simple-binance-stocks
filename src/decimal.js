@@ -1,4 +1,4 @@
-// Exact nonnegative decimal arithmetic for order sizes. Integer operations use
+// Exact nonnegative decimal arithmetic for order sizes and wallet reports. Integer operations use
 // decimal digits so the same implementation works in Node.js and Apps Script.
 function trimInteger(value) {
   return value.replace(/^0+(?=\d)/, '');
@@ -7,6 +7,17 @@ function trimInteger(value) {
 function compareIntegers(left, right) {
   if (left.length !== right.length) return left.length < right.length ? -1 : 1;
   return left === right ? 0 : left < right ? -1 : 1;
+}
+
+function addIntegers(left, right) {
+  const result = [];
+  let carry = 0;
+  for (let i = left.length - 1, j = right.length - 1; i >= 0 || j >= 0 || carry; i--, j--) {
+    const sum = (i >= 0 ? Number(left[i]) : 0) + (j >= 0 ? Number(right[j]) : 0) + carry;
+    result.push(String(sum % 10));
+    carry = Math.floor(sum / 10);
+  }
+  return trimInteger(result.reverse().join(''));
 }
 
 function subtractIntegers(left, right) {
@@ -132,6 +143,19 @@ export default class Decimal {
   gt(value) { return this.comparedTo(value) > 0; }
   gte(value) { return this.comparedTo(value) >= 0; }
   eq(value) { return this.comparedTo(value) === 0; }
+
+  plus(value) {
+    const operands = aligned(this, new Decimal(value));
+    return fromParts(addIntegers(operands.left, operands.right), operands.scale);
+  }
+
+  minus(value) {
+    const operands = aligned(this, new Decimal(value));
+    if (compareIntegers(operands.left, operands.right) < 0) {
+      throw new RangeError('Decimal subtraction cannot produce a negative result');
+    }
+    return fromParts(subtractIntegers(operands.left, operands.right), operands.scale);
+  }
 
   times(value) {
     const right = new Decimal(value);

@@ -9,6 +9,13 @@ const conversionAck = value => object(value) && ['P', 'S', 'F'].includes(value.s
   (value.status === 'F' || nonEmpty(value.issuerRequestId))
 const successAck = value => object(value) && typeof value.success === 'boolean'
 const listenAck = value => object(value) && nonEmpty(value.listenKey)
+const fundingWallet = Object.freeze({
+  path: '/sapi/v1/asset/get-funding-asset',
+  method: 'POST',
+  security: 'USER_DATA',
+  readOnly: true,
+  validateResponse: Array.isArray
+})
 
 export const endpoints = Object.freeze({
   exchangeInfo: endpoint('market/exchangeInfo', 'GET', 'MARKET_DATA'),
@@ -26,5 +33,6 @@ export const endpoints = Object.freeze({
   conversionStatus: endpoint('tokenized/convert-status', 'GET', 'USER_DATA'),
   conversionHistory: endpoint('tokenized/history', 'GET', 'USER_DATA'),
   disclaimer: endpoint('account/disclaimer', 'POST', 'TRADE', false, successAck),
-  listenKey: endpoint('listenKey', 'POST', 'USER_STREAM', false, listenAck)
+  listenKey: endpoint('listenKey', 'POST', 'USER_STREAM', false, listenAck),
+  fundingWallet
 })

@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import Decimal from '../src/decimal.js';
 
+test('addition and subtraction preserve fractional carries for wallet balances', () => {
+  const whole = new Decimal('999999999999999999.999999999').plus('0.000000001');
+  assert.equal(whole.toFixed(), '1000000000000000000');
+  assert.equal(whole.minus('0.000000001').toFixed(), '999999999999999999.999999999');
+  assert.throws(() => new Decimal('0.1').minus('0.2'), /negative/);
+});
+
 test('plain decimal parsing preserves digits and normalizes padding', () => {
   for (const [input, expected] of [
     ['000123.4500', '123.45'], ['0.0000012300', '0.00000123'], ['000.000', '0'],

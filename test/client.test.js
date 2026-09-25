@@ -22,7 +22,7 @@ const LIMIT = Object.freeze({
   tradingSession: 'RTH', clientOrderId: SUPPLIED_ID,
 });
 const SIZED_LIMIT = Object.freeze({
-  amountInUSD: 100, entryPrice: '180.50', tradingSession: 'RTH', clientOrderId: SUPPLIED_ID,
+  symbol: 'AAPL', amountInUSD: 100, entryPrice: '180.50', tradingSession: 'RTH', clientOrderId: SUPPLIED_ID,
 });
 
 function http(body, status = 200, headers = {}) {
@@ -37,7 +37,10 @@ function defaultResponse(call) {
       return http({ timezone: 'America/New_York', symbols: query.symbol ? symbols.filter(item => item.symbol === query.symbol) : symbols });
     }
     case 'market/quote': return http({ ...QUOTE, symbol: query.symbol });
-    case 'market/tokenized-assets': return http([{ tokenizedAsset: 'AAPLB', underlyingAsset: 'AAPL', multiplier: '1' }]);
+    case 'market/tokenized-assets': return http([{
+      assetCode: 'AAPLB', assetName: 'Apple Inc. Tokenized Stock',
+      underlyingEquitySymbol: 'AAPL', multiplier: '1', multiplierValid: true,
+    }]);
     case 'order/place': return http({ status: 'S', orderId: 'order-001', clientOrderId: query.clientOrderId });
     case 'order/cancel': return http({ status: 'S', orderId: query.orderId });
     case 'order/cancel-all': return http({ success: true });
@@ -51,6 +54,7 @@ function defaultResponse(call) {
     case 'tokenized/history': return http({ rows: [], hasMore: false, nextLastId: null });
     case 'account/disclaimer': return http({ success: true });
     case 'listenKey': return http({ listenKey: 'offline-listen-key' });
+    case 'asset/get-funding-asset': return http([{ asset: 'USDC', free: '900', locked: '100', freeze: '0', withdrawing: '0' }]);
     default: throw new Error(`Unexpected mocked route: ${path}`);
   }
 }
@@ -60,12 +64,13 @@ function harness({ responder, options = {}, Client = BinanceStocks } = {}) {
   const fetch = async (url, init) => {
     const parsed = new URL(url);
     assert.equal(parsed.origin, 'https://api.binance.com');
-    assert.ok(parsed.pathname.startsWith(PREFIX));
-    const call = { url, init, path: parsed.pathname.slice(PREFIX.length), query: Object.fromEntries(parsed.searchParams) };
+    assert.ok(parsed.pathname.startsWith(PREFIX) || parsed.pathname === '/sapi/v1/asset/get-funding-asset');
+    const path = parsed.pathname.startsWith(PREFIX) ? parsed.pathname.slice(PREFIX.length) : 'asset/get-funding-asset';
+    const call = { url, init, path, query: Object.fromEntries(parsed.searchParams) };
     calls.push(call);
     return responder ? responder(call, defaultResponse) : defaultResponse(call);
   };
-  const client = new Client({ apiKey: API_KEY, apiSecret: API_SECRET, symbol: 'AAPL', now: () => NOW, fetch, ...options });
+  const client = new Client({ apiKey: API_KEY, apiSecret: API_SECRET, now: () => NOW, fetch, ...options });
   return { client, calls };
 }
 
@@ -93,9 +98,10 @@ function assertSecurity(call, security) {
   }
 }
 
-test('all 16 REST endpoints use their documented path, HTTP method and security', async (t) => {
+test('REST endpoints use their documented path, HTTP method and security', async (t) => {
   const cases = [
-    ['getExchangeInfo', [{ symbol: 'AAPL' }], 'market/exchangeInfo', 'GET', 'MARKET_DATA', { symbol: 'AAPL' }],
+    ['getExchangeInfo', [], 'market/exchangeInfo', 'GET', 'MARKET_DATA', {}],
+    ['getSymbolInfo', ['AAPL'], 'market/exchangeInfo', 'GET', 'MARKET_DATA', { symbol: 'AAPL' }],
     ['getTokenizedAssets', [], 'market/tokenized-assets', 'GET', 'MARKET_DATA', {}],
     ['getQuote', ['AAPL'], 'market/quote', 'GET', 'MARKET_DATA', { symbol: 'AAPL' }],
     ['placeOrder', [LIMIT], 'order/place', 'POST', 'TRADE', { symbol: 'AAPL', side: 'BUY', orderType: 'LIMIT', quoteAsset: 'USDC', price: '180.5', quantity: '1', tradingSession: 'RTH', timeInForce: 'DAY', clientOrderId: SUPPLIED_ID }],
@@ -111,6 +117,7 @@ test('all 16 REST endpoints use their documented path, HTTP method and security'
     ['getConversionHistory', [], 'tokenized/history', 'GET', 'USER_DATA', {}],
     ['acceptDisclaimer', [{ accepted: true }], 'account/disclaimer', 'POST', 'TRADE', {}],
     ['createListenKey', [], 'listenKey', 'POST', 'USER_STREAM', {}],
+    ['getFundingWallet', [], 'asset/get-funding-asset', 'POST', 'USER_DATA', { asset: 'USDC' }],
   ];
   for (const [method, args, path, verb, security, expected] of cases) {
     await t.test(method, async () => {
@@ -131,8 +138,8 @@ test('constructor validates options, USDC and runtime configuration without maki
   const neverFetch = () => { throw new Error('Constructor must not fetch'); };
   for (const options of [null, [], 'key', 3, false]) assert.throws(() => new BinanceStocks(options), TypeError);
   for (const options of [
-    { quoteAsset: 'USD' }, { quoteAsset: 'USDT' }, { quoteAsset: null }, { symbol: 'aapl' },
-    { symbol: 'AAPL/USDC' }, { unknown: true }, { recvWindow: 0 }, { recvWindow: 60001 },
+    { quoteAsset: 'USD' }, { quoteAsset: 'USDT' }, { quoteAsset: null }, { symbol: 'AAPL' },
+    { symbol: 'aapl' }, { symbol: 'AAPL/USDC' }, { unknown: true }, { recvWindow: 0 }, { recvWindow: 60001 },
     { rateLimitFallbackMs: 0 }, { now: NOW }, { fetch: true }, { sign: true },
     { baseUrl: 'http://api.binance.com' }, { baseUrl: 'https://api.binance.com/sapi' },
   ]) assert.throws(() => new BinanceStocks({ fetch: neverFetch, ...options }));
@@ -142,31 +149,62 @@ test('constructor validates options, USDC and runtime configuration without maki
   assert.throws(() => { client.quoteAsset = 'USD'; }, TypeError);
 });
 
-test('default ticker applies to single-symbol helpers and explicit symbols override it', async () => {
+test('one client handles multiple explicit symbols and rejects missing symbols', async () => {
   const { client, calls } = harness();
-  assert.equal((await client.getQuote()).symbol, 'AAPL');
+  assert.equal((await client.getQuote('AAPL')).symbol, 'AAPL');
   assert.equal((await client.getQuote('SPY')).symbol, 'SPY');
-  assert.equal((await client.getSymbolInfo()).symbol, 'AAPL');
+  assert.equal((await client.getSymbolInfo('AAPL')).symbol, 'AAPL');
   assert.equal((await client.getSymbolInfo('SPY')).symbol, 'SPY');
   await client.getExchangeInfo();
   assert.deepEqual(businessParams(calls.at(-1)), {});
   const acknowledgement = await client.createMarketOrder({ symbol: 'SPY', amountInUSD: 100 });
   assert.equal(acknowledgement.status, 'S');
   assert.equal(calls.at(-1).query.symbol, 'SPY');
-  assert.equal(client.symbol, 'AAPL');
+  assert.equal(client.symbol, undefined);
 
-  const unconfigured = harness({ options: { symbol: undefined } });
-  for (const invoke of [() => unconfigured.client.getQuote(), () => unconfigured.client.getSymbolInfo(), () => unconfigured.client.createMarketOrder({ amountInUSD: 100 })]) {
+  const beforeMissing = calls.length;
+  for (const invoke of [() => client.getQuote(), () => client.getSymbolInfo(), () => client.createMarketOrder({ amountInUSD: 100 }), () => client.createLimitOrder({ ...SIZED_LIMIT, symbol: undefined }), () => client.placeOrder({ ...LIMIT, symbol: undefined })]) {
     await assert.rejects(invoke, /symbol/);
   }
-  assert.equal(unconfigured.calls.length, 0);
+  assert.equal(calls.length, beforeMissing);
+});
+
+test('exchange info always fetches all symbols; symbol info caches each ticker and refreshes on request', async () => {
+  const { client, calls } = harness();
+  assert.deepEqual((await client.getExchangeInfo()).symbols.map(item => item.symbol), ['AAPL', 'SPY']);
+  await client.getExchangeInfo();
+  assert.deepEqual(calls.map(call => call.query.symbol), [undefined, undefined]);
+  await client.getSymbolInfo('AAPL');
+  await client.getSymbolInfo('AAPL');
+  assert.equal(calls.filter(call => call.query.symbol === 'AAPL').length, 1);
+  await client.getSymbolInfo('SPY');
+  await client.getSymbolInfo('AAPL', { refresh: true });
+  assert.deepEqual(calls.filter(call => call.path === 'market/exchangeInfo').map(call => call.query.symbol),
+    [undefined, undefined, 'AAPL', 'SPY', 'AAPL']);
+  await client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100 });
+  assert.equal(calls.filter(call => call.path === 'market/exchangeInfo').length, 6,
+    'Order placement must fetch current symbol rules despite a cache hit.');
+  await client.getTokenizedAssets();
+  await client.getTokenizedAssets();
+  await client.getTokenizedAssets({ refresh: true });
+  assert.equal(calls.filter(call => call.path === 'market/tokenized-assets').length, 2);
+  await client.getQuote('AAPL');
+  await client.getQuote('AAPL');
+  assert.equal(calls.filter(call => call.path === 'market/quote').length, 2);
+});
+
+test('getExchangeInfo rejects removed symbol and refresh options before requesting metadata', async () => {
+  const { client, calls } = harness();
+  await assert.rejects(() => client.getExchangeInfo({ symbol: 'AAPL' }), /Unknown/);
+  await assert.rejects(() => client.getExchangeInfo({ refresh: true }), /Unknown/);
+  assert.equal(calls.length, 0);
 });
 
 test('key-only clients can read market data and renew listen keys but cannot sign private requests', async () => {
   const { client, calls } = harness({ options: { apiSecret: undefined } });
   await client.getExchangeInfo();
   await client.getTokenizedAssets();
-  await client.getQuote();
+  await client.getQuote('AAPL');
   await client.createListenKey({ recvWindow: 60000 });
   assert.equal(calls.at(-1).query.recvWindow, '60000');
   assert.equal(calls.at(-1).query.timestamp, String(NOW));
@@ -174,7 +212,7 @@ test('key-only clients can read market data and renew listen keys but cannot sig
   await assert.rejects(() => client.getOpenOrders(), /apiSecret|sign adapter/);
   assert.equal(calls.length, 4);
   const missing = harness({ options: { apiKey: undefined } });
-  await assert.rejects(() => missing.client.getQuote(), /apiKey/);
+  await assert.rejects(() => missing.client.getQuote('AAPL'), /apiKey/);
   assert.equal(missing.calls.length, 0);
 });
 
@@ -199,14 +237,14 @@ test('limit helpers round down exactly and submit USDC sizing without helper-onl
 
 test('market buy uses USD notional while sell sizes against current bid with exact downward rounding', async () => {
   const buy = harness();
-  await buy.client.createMarketOrder({ amountInUSD: 123.45, clientOrderId: SUPPLIED_ID });
+  await buy.client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 123.45, clientOrderId: SUPPLIED_ID });
   assert.deepEqual(businessParams(buy.calls.at(-1)), {
     symbol: 'AAPL', side: 'BUY', orderType: 'MARKET', quoteAsset: 'USDC',
     timeInForce: 'DAY', notional: '123.45', clientOrderId: SUPPLIED_ID,
   });
   assert.deepEqual(buy.calls.map(call => call.path), ['market/exchangeInfo', 'order/place']);
   const sell = harness();
-  await sell.client.createMarketOrder({ side: 'SELL', amountInUSD: 100, clientOrderId: SUPPLIED_ID });
+  await sell.client.createMarketOrder({ symbol: 'AAPL', side: 'SELL', amountInUSD: 100, clientOrderId: SUPPLIED_ID });
   assert.deepEqual(businessParams(sell.calls.at(-1)), {
     symbol: 'AAPL', side: 'SELL', orderType: 'MARKET', quoteAsset: 'USDC',
     timeInForce: 'DAY', quantity: '0.55401662', clientOrderId: SUPPLIED_ID,
@@ -219,17 +257,17 @@ test('public order helpers reject non-USDC, invalid amount inputs and forbidden 
     const { client, calls } = harness();
     await assert.rejects(() => client.placeOrder({ ...LIMIT, quoteAsset }), /USDC/);
     await assert.rejects(() => client.createLimitOrder({ ...SIZED_LIMIT, quoteAsset }), /USDC/);
-    await assert.rejects(() => client.createMarketOrder({ amountInUSD: 100, quoteAsset }), /USDC/);
+    await assert.rejects(() => client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100, quoteAsset }), /USDC/);
     assert.equal(calls.length, 0);
   }
   for (const amountInUSD of ['100', 0, -1, NaN, Infinity, undefined]) {
     const { client, calls } = harness();
     await assert.rejects(() => client.createLimitOrder({ ...SIZED_LIMIT, amountInUSD }), /amountInUSD/);
-    await assert.rejects(() => client.createMarketOrder({ amountInUSD }), /amountInUSD/);
+    await assert.rejects(() => client.createMarketOrder({ symbol: 'AAPL', amountInUSD }), /amountInUSD/);
     assert.equal(calls.length, 0);
   }
   const { client, calls } = harness();
-  await assert.rejects(() => client.createMarketOrder({ amountInUSD: 100, tradingSession: 'RTH' }), /Unknown/);
+  await assert.rejects(() => client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100, tradingSession: 'RTH' }), /Unknown/);
   await assert.rejects(() => client.createLimitOrder({ ...SIZED_LIMIT, quantity: '10' }), /Unknown/);
   await assert.rejects(() => client.placeOrder({ ...LIMIT, amountInUSD: 100 }), /Unknown/);
   assert.equal(calls.length, 0);
@@ -238,30 +276,30 @@ test('public order helpers reject non-USDC, invalid amount inputs and forbidden 
 test('missing quotes and exchange rules prevent market-sell or limit mutations', async () => {
   for (const body of ['', '{}', '{"symbol":"SPY","bidPrice":"180.50"}', '{"symbol":"AAPL","bidPrice":"0"}']) {
     const { client, calls } = harness({ responder: (call, fallback) => call.path === 'market/quote' ? http(body) : fallback(call) });
-    await assert.rejects(() => client.createMarketOrder({ side: 'SELL', amountInUSD: 100 }));
+    await assert.rejects(() => client.createMarketOrder({ symbol: 'AAPL', side: 'SELL', amountInUSD: 100 }));
     assert.ok(calls.every(call => call.init.method === 'GET'));
   }
   const missing = harness({ responder: (call, fallback) => call.path === 'market/exchangeInfo' ? http({ symbols: [] }) : fallback(call) });
   await assert.rejects(() => missing.client.createLimitOrder(SIZED_LIMIT), /No active exchange information/);
   assert.equal(missing.calls.length, 1);
   const malformed = harness({ responder: () => http({ unexpected: [] }) });
-  await assert.rejects(() => malformed.client.getSymbolInfo(), ResponseError);
+  await assert.rejects(() => malformed.client.getSymbolInfo('AAPL'), ResponseError);
   const emptyQuote = harness({ responder: () => http('') });
-  assert.equal(await emptyQuote.client.getQuote(), null);
+  assert.equal(await emptyQuote.client.getQuote('AAPL'), null);
 });
 
 test('Node entry generates IDs and custom runtimes require an ID when randomness is unavailable', async () => {
   const { client, calls } = harness();
-  await client.createMarketOrder({ amountInUSD: 100 });
+  await client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100 });
   const generated = calls.at(-1).query.clientOrderId;
   assert.match(generated, /^[a-zA-Z0-9_-]{32,36}$/);
   const deterministic = harness({ options: { crypto: { subtle: webcrypto.subtle, randomUUID: () => GENERATED_ID } } });
   await deterministic.client.placeOrder({ ...LIMIT, clientOrderId: undefined });
   assert.equal(deterministic.calls.at(-1).query.clientOrderId, GENERATED_ID);
   const portable = harness({ Client: CoreBinanceStocks, options: { crypto: {}, sign: () => 'offline-signature' } });
-  await assert.rejects(() => portable.client.createMarketOrder({ amountInUSD: 100 }), /clientOrderId/);
+  await assert.rejects(() => portable.client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100 }), /clientOrderId/);
   assert.ok(portable.calls.every(call => call.init.method === 'GET'));
-  await portable.client.createMarketOrder({ amountInUSD: 100, clientOrderId: SUPPLIED_ID });
+  await portable.client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100, clientOrderId: SUPPLIED_ID });
   assert.equal(portable.calls.at(-1).query.clientOrderId, SUPPLIED_ID);
 });
 
@@ -276,7 +314,7 @@ test('uncertain placements preserve caller or generated IDs and never resubmit',
           return http({ code: -1000, msg: 'Unknown execution outcome' }, 503);
         },
       });
-      await assert.rejects(() => client.createMarketOrder({ amountInUSD: 100, clientOrderId }), error => {
+      await assert.rejects(() => client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100, clientOrderId }), error => {
         assert.ok(error instanceof UnknownExecutionError);
         assert.equal(error.executionUnknown, true);
         assert.equal(error.clientOrderId, clientOrderId ?? GENERATED_ID);
@@ -295,7 +333,7 @@ test('malformed successful placement responses preserve generated reconciliation
     options: { crypto: { subtle: webcrypto.subtle, randomUUID: () => GENERATED_ID } },
     responder: (call, fallback) => call.path === 'order/place' ? http({}) : fallback(call),
   });
-  await assert.rejects(() => client.createMarketOrder({ amountInUSD: 100 }), error => {
+  await assert.rejects(() => client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100 }), error => {
     assert.ok(error instanceof UnknownExecutionError);
     assert.equal(error.clientOrderId, GENERATED_ID);
     assert.equal(error.executionUnknown, true);
@@ -307,7 +345,7 @@ test('malformed successful placement responses preserve generated reconciliation
 
 test('acknowledgements and optional order execution fields are returned without synthetic fills', async () => {
   const failed = harness({ responder: (call, fallback) => call.path === 'order/place' ? http({ status: 'F', orderId: 'order-001' }) : fallback(call) });
-  assert.deepEqual(await failed.client.createMarketOrder({ amountInUSD: 100 }), { status: 'F', orderId: 'order-001' });
+  assert.deepEqual(await failed.client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100 }), { status: 'F', orderId: 'order-001' });
   const { client } = harness();
   const order = await client.getOrder({ clientOrderId: SUPPLIED_ID });
   assert.equal(order.status, 'ACCEPTED');
@@ -357,6 +395,41 @@ test('order/trade history sends current and receives page while validating time 
   assert.equal(calls.length, 2);
 });
 
+test('wallet and portfolio methods paginate executions and report Funding Wallet USDC with bid values', async () => {
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({
+    executionId: `exec-${index}`, symbol: 'NVDA', side: 'BUY', qty: '0.01', quote: 'USDC',
+  }));
+  const { client, calls } = harness({
+    responder(call, fallback) {
+      if (call.path === 'trade/history') {
+        const page = Number(call.query.current ?? 1);
+        return http({ total: 101, page, size: 100, rows: page === 1 ? firstPage : [
+          firstPage[0],
+          { executionId: 'exec-sell', symbol: 'NVDA', side: 'SELL', qty: '0.125', quote: 'USDC' },
+        ] });
+      }
+      if (call.path === 'market/quote') return http({ symbol: call.query.symbol, bidPrice: '300', askPrice: '301' });
+      return fallback(call);
+    },
+  });
+  assert.deepEqual(await client.getEquityWallet({ startTime: 0, endTime: NOW }), { NVDA: { amount: '0.875' } });
+  const tradeCalls = calls.filter(call => call.path === 'trade/history');
+  assert.deepEqual(tradeCalls.map(call => call.query.current), ['1', '2']);
+  assert.ok(tradeCalls.every(call => call.query.size === '100' && call.query.startTime === '0' && call.query.endTime === String(NOW)));
+  assert.deepEqual(await client.getFundingWallet(), {
+    USDC: { free: '900', locked: '100', freeze: '0', withdrawing: '0', amount: '1000' },
+  });
+  assert.equal(calls.at(-1).path, 'asset/get-funding-asset');
+  assert.deepEqual(businessParams(calls.at(-1)), { asset: 'USDC' });
+  assert.deepEqual(await client.getPortfolio({ startTime: 0, endTime: NOW }), {
+    totals: { totalUsd: 1262.5, positionsUsd: 262.5, cashUsd: 1000 },
+    cash: { USDC: { amount: 1000, quote: 1, usd: 1000, weight: 0.7921 } },
+    positions: { NVDA: {
+      amount: 0.875, quote: 300, usd: 262.5, weight: 0.2079
+    } },
+  });
+});
+
 test('token conversion inputs, generated IDs and int64 cursor pagination survive the public API', async () => {
   const { client, calls } = harness({
     options: { crypto: { subtle: webcrypto.subtle, randomUUID: () => GENERATED_ID } },
@@ -398,7 +471,7 @@ test('API failures retain metadata and rate-limit state blocks repeated requests
     options: { now: () => currentTime },
     responder: () => http({ code: -1003, msg: 'Too many requests' }, 429, { 'Retry-After': '2', 'X-SAPI-USED-IP-WEIGHT-1M': '99' }),
   });
-  await assert.rejects(() => client.getQuote(), error => {
+  await assert.rejects(() => client.getQuote('AAPL'), error => {
     assert.ok(error instanceof BinanceAPIError);
     assert.ok(error instanceof RateLimitError);
     assert.equal(error.status, 429);
@@ -411,9 +484,9 @@ test('API failures retain metadata and rate-limit state blocks repeated requests
   const state = client.getRateLimitState();
   assert.equal(state.lockedUntil, NOW + 2000);
   assert.equal(state.usage['x-sapi-used-ip-weight-1m'], '99');
-  await assert.rejects(() => client.getQuote(), error => error instanceof RateLimitError && error.local === true);
+  await assert.rejects(() => client.getQuote('AAPL'), error => error instanceof RateLimitError && error.local === true);
   assert.equal(calls.length, 1);
   currentTime += 2000;
-  await assert.rejects(() => client.getQuote(), RateLimitError);
+  await assert.rejects(() => client.getQuote('AAPL'), RateLimitError);
   assert.equal(calls.length, 2);
 });
