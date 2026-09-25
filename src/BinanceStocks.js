@@ -103,6 +103,14 @@ export default class BinanceStocks {
       now: this._now,
       baseUrl: options.baseUrl ?? 'https://api.binance.com'
     })
+
+    if(typeof Session !== 'undefined' && typeof Session.getScriptTimeZone === 'function') {
+      const timeZone = Session.getScriptTimeZone()
+      if (timeZone !== 'Etc/UTC') {
+        throw new Error(`Timezone "${timeZone}" is invalid. Open ⚙️ (Project Settings) and set the timezone to "(GMT+00:00) universal coordinated time".`)
+      }
+    }
+
   }
 
   _request(name, params = {}) {
