@@ -91,7 +91,7 @@ const transportStates = new WeakMap();
 
 async function createSignature(state, payload) {
   if (!state.sign && (typeof state.apiSecret !== 'string' || state.apiSecret.length === 0)) {
-    throw new ValidationError('apiSecret or a sign adapter is required for signed requests.');
+    throw new ValidationError('apiSecret or a sign adapter is required for Binance Stocks requests.');
   }
   let result;
   try {
@@ -179,8 +179,8 @@ export default class Transport {
       if (SENSITIVE_KEY.test(key) || key === 'timestamp') {
         throw new ValidationError('Credentials, signature, and timestamp are managed by the transport.');
       }
-      if (key === 'recvWindow' && (security === 'MARKET_DATA' || !Number.isInteger(value) || value <= 0 || value > 60000)) {
-        throw new ValidationError('recvWindow must be an integer from 1 to 60000 and is unavailable for MARKET_DATA.');
+      if (key === 'recvWindow' && (!Number.isInteger(value) || value <= 0 || value > 60000)) {
+        throw new ValidationError('recvWindow must be an integer from 1 to 60000.');
       }
       if (!['string', 'number', 'boolean'].includes(typeof value) || (typeof value === 'number' && !Number.isFinite(value))) {
         throw new ValidationError('Request parameters must be strings, finite numbers, or booleans.');
@@ -194,13 +194,10 @@ export default class Transport {
         status: state.rateLimitStatus, path, method, retryAfterMs: state.lockedUntil - now, lockedUntil: state.lockedUntil, local: true,
       });
     }
-    const signed = security === 'USER_DATA' || security === 'TRADE';
-    if (signed || security === 'USER_STREAM') {
-      query.recvWindow = query.recvWindow ?? state.recvWindow;
-      query.timestamp = now;
-    }
+    query.recvWindow = query.recvWindow ?? state.recvWindow;
+    query.timestamp = now;
     const payload = serialize(query);
-    const signature = signed ? await createSignature(state, payload) : undefined;
+    const signature = await createSignature(state, payload);
     // Another concurrent request can establish a cooldown while signing awaits an adapter.
     const currentTime = state.now();
     if (currentTime < state.lockedUntil) {
@@ -208,7 +205,7 @@ export default class Transport {
         status: state.rateLimitStatus, path, method, retryAfterMs: state.lockedUntil - currentTime, lockedUntil: state.lockedUntil, local: true,
       });
     }
-    const encoded = signature === undefined ? payload : `${payload}&signature=${encode(signature)}`;
+    const encoded = `${payload}&signature=${encode(signature)}`;
     const url = `${state.baseUrl}${path}${encoded ? `?${encoded}` : ''}`;
     const clean = sanitizer([state.apiKey, state.apiSecret, signature]);
     const mutation = method !== 'GET' && !readOnly;

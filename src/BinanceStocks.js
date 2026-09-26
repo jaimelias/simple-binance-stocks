@@ -13,6 +13,8 @@ export {
   BinanceAPIError, RateLimitError, UnknownExecutionError, ResponseError, ValidationError
 } from './errors.js'
 
+export {getNyMarketSession} from './getNyMarketSession.js'
+
 const clientOptions = [
   'apiKey', 'apiSecret', 'quoteAsset', 'fetch', 'crypto', 'sign', 'now',
   'baseUrl', 'recvWindow', 'rateLimitFallbackMs'

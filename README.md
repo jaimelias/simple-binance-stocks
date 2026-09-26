@@ -6,7 +6,7 @@ The library covers the 16 Binance Stocks REST endpoints under `/sapi/v1/equity/`
 
 ## Requirements
 
-- A Binance API key with access to Stocks. Market data and listen-key requests require the key; trading and account queries also require a signing secret or custom signer.
+- A Binance API key and signing secret with access to Stocks, or an API key and custom signer. This library signs every REST request.
 - An eligible account with the US equity disclaimer accepted before trading. Acceptance is an explicit operation; constructing a client never accepts it.
 - Node.js 20 or later, or Google Apps Script with the V8 runtime.
 
@@ -31,7 +31,7 @@ const rules = await stocks.getSymbolInfo('SPY');
 console.log(rules);
 ```
 
-When trying the examples directly inside this repository, use `import BinanceStocks from './index.js'` for ESM. Keep credentials outside source files. A client with only `apiKey` can call market-data methods and `createListenKey()`. The constructor does not accept a `symbol`; pass a ticker to each symbol-specific call. The same client can query or trade multiple tickers.
+When trying the examples directly inside this repository, use `import BinanceStocks from './index.js'` for ESM. Keep credentials outside source files. A client with only `apiKey` cannot send requests. The constructor does not accept a `symbol`; pass a ticker to each symbol-specific call. The same client can query or trade multiple tickers.
 
 ## Order sizing
 
@@ -182,7 +182,7 @@ The [Binance Stocks Quick Start](https://developers.binance.com/en/docs/products
 | `getQuote(symbol)` | Latest quote object for one required ticker, or `null` for Binance's empty successful response. |
 | `getTokenizedAssets({ refresh } = {})` | Tokenized-asset mappings. Set `refresh: true` to bypass cached data. |
 
-These endpoints use the API key without a signature. `getExchangeInfo()` accepts no symbol or refresh options; it fetches the full response each time and does not cache it. Valid, nonempty symbol rules from `getSymbolInfo()` are cached by ticker for up to 300 seconds; tokenized-asset mappings are cached for up to 21,600 seconds (six hours). The cache is per client in Node.js and script-wide through `CacheService` in Apps Script. `refresh: true` on a cached method fetches fresh data. Order methods always fetch current exchange rules before placement. Apps Script may evict entries early. Quotes are never cached.
+The library signs these requests with the same `timestamp`, `recvWindow`, and `signature` parameters used for trading requests. Binance documents these routes as requiring an API key without a signature, so acceptance of the additional signing parameters should be checked against a live account before relying on this behavior. `getExchangeInfo()` accepts no symbol or refresh options; it fetches the full response each time and does not cache it. Valid, nonempty symbol rules from `getSymbolInfo()` are cached by ticker for up to 300 seconds; tokenized-asset mappings are cached for up to 21,600 seconds (six hours). The cache is per client in Node.js and script-wide through `CacheService` in Apps Script. `refresh: true` on a cached method fetches fresh data. Order methods always fetch current exchange rules before placement. Apps Script may evict entries early. Quotes are never cached.
 
 ### Trading
 
@@ -257,7 +257,7 @@ Conversions are asynchronous: mint/redeem responses contain an `issuerRequestId`
 | Method | Behavior |
 | --- | --- |
 | `acceptDisclaimer({ accepted: true, recvWindow })` | Explicitly records acceptance for the account. The client requires `accepted: true`; this confirmation is not sent as an API parameter. |
-| `createListenKey({ recvWindow } = {})` | Creates a listen key or renews the active key for the account; returns `{ listenKey }`. Uses an API key and timestamp without a signature. |
+| `createListenKey({ recvWindow } = {})` | Creates a listen key or renews the active key for the account; returns `{ listenKey }`. The library sends an API key, timestamp, and signature. Binance documents this route as API-key-only, so verify acceptance of the additional signature with a live account. |
 | `getRateLimitState()` | Returns the client's current rate-limit state. |
 
 Read the applicable Binance disclaimer before explicitly calling `acceptDisclaimer()`. A listen key is available for an external WebSocket consumer; this package does not open WebSocket connections. Binance's Stocks REST catalog does not provide a current equity-position endpoint; `getEquityWallet()` therefore derives an estimate from trade history.
