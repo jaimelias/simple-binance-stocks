@@ -11,10 +11,8 @@ export default class BinanceStocks extends BinanceStocksCore {
     }
 
     transport(key, payload) {
-
-        binancePayloadAsserts[ke](payload);
-
         try {
+            binancePayloadAsserts[ke](payload);
             const endpoint = endpoints[key];
             return gasFetch(this, endpoint, payload);
         } catch (err) {

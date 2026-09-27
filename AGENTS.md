@@ -25,3 +25,7 @@
 - Node.js specific files are stored in `src/node` folder.
 - Binance Payload Asserts File `src/utilities/binancePayloadAsserts.js`.
 - Secrets `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_PROXY` are available for `read-only` (GET) test operation. It is not allowed perform any modify or update operations (DELETE, POST, PUT). It is not allowed to shared or log these secrets.
+
+## References
+
+- For Binance Stocks API reference read `docs/schema.yaml`.

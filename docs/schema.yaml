@@ -1,0 +1,2379 @@
+openapi: 3.0.2
+info:
+  title: Stocks Trading REST API
+  description: REST APIs for Binance Stocks Trading. All endpoints under `/sapi/v1/equity/*`.
+  x-description-cn: Binance 股票交易 REST API。所有接口位于 `/sapi/v1/equity/*`。
+  version: 1.0.0
+  termsOfService: https://www.binance.com/en/terms
+  contact:
+    name: Binance API Support
+    url: https://www.binance.com/en/support
+x-product-type: rest-api
+x-rate-limits-guide: products/stocks/general-info#rate-limits
+x-rate-limits-guide-cn: products/stocks/general-info#频率限制
+x-security-guide: products/stocks/general-info#signed-trade-and-user_data-endpoint-security
+x-security-guide-cn: products/stocks/general-info#枚举契约
+x-api-key-guide: https://www.binance.com/en/support/faq/detail/360002502072
+x-api-key-guide-cn: https://www.binance.com/cn/support/faq/detail/360002502072
+externalDocs:
+  description: Stocks Trading docs
+  url: https://developers.binance.com/en/docs/products/stocks/introduction
+tags:
+  - name: market-data
+    x-displayName: Market Data
+    x-displayName-cn: 行情接口
+  - name: trade
+    x-displayName: Trade
+    x-displayName-cn: 交易接口
+  - name: tokenized
+    x-displayName: Tokenized
+    x-displayName-cn: 代币化接口
+  - name: account
+    x-displayName: Account
+    x-displayName-cn: 账户接口
+  - name: user-data-streams
+    x-displayName: User Data Streams
+    x-displayName-cn: 用户数据流
+servers:
+  - url: https://api.binance.com
+paths:
+  /sapi/v1/equity/market/exchangeInfo:
+    get:
+      summary: Exchange Info (MARKET_DATA)
+      x-summary-cn: 交易规则与 Symbol 列表 (MARKET_DATA)
+      description: >-
+        Returns current exchange trading rules and the list of tradable US-equity symbols. MARKET_DATA endpoint —
+        requires an API key (`X-MBX-APIKEY`) but no signature. Response is served from a server-side cache.
+      x-description-cn: 返回当前交易规则与可交易美股 Symbol 列表。MARKET_DATA 接口——需携带 API key（`X-MBX-APIKEY`），但无需签名。响应来自服务端缓存。
+      tags:
+        - market-data
+      operationId: exchangeInfo
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/market-data#exchange-info
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/MarketDataApi/exchangeInfo.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/market_data_api/exchange_info.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/MarketData/exchange_info.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/marketdata/ExchangeInfoExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/MarketDataAPI/ExchangeInfo/ExchangeInfo.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/marketdata/ExchangeInfoExample.php
+      x-security-type: MARKET_DATA
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+            example: AAPL
+          description: >-
+            Filter to a single US-equity ticker, e.g. `AAPL`. When omitted, returns all active symbols. An unknown
+            ticker returns an empty `symbols` array (HTTP 200), not an error.
+          x-description-cn: 过滤单只美股 ticker，例如 `AAPL`。省略时返回所有上架 symbol。未知 ticker 返回空 `symbols` 数组（HTTP 200），而非报错。
+      responses:
+        "200":
+          description: Exchange Info
+          x-description-cn: 交易规则与 Symbol 列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  timezone:
+                    type: string
+                    example: UTC
+                    description: Always `UTC`.
+                    x-description-cn: 固定为 `UTC`。
+                  symbols:
+                    type: array
+                    description: List of tradable symbols with trading rules.
+                    x-description-cn: 可交易 symbol 列表及其交易规则。
+                    items:
+                      type: object
+                      properties:
+                        symbol:
+                          type: string
+                          example: AAPL
+                          description: US-equity ticker, e.g. `AAPL`.
+                          x-description-cn: 美股 ticker，例如 `AAPL`。
+                        tradability:
+                          type: string
+                          example: BUY_SELL
+                          enum:
+                            - BUY_SELL
+                            - BUY
+                            - SELL
+                            - NONE
+                          description: Trading direction allowed — one of `BUY_SELL` / `BUY` / `SELL` / `NONE`.
+                          x-description-cn: 允许的交易方向，取值之一：`BUY_SELL` / `BUY` / `SELL` / `NONE`。
+                        tradabilityUpdateTime:
+                          type: integer
+                          format: int64
+                          example: 1735900000000
+                          description: Last time the `tradability` value was updated (ms epoch).
+                          x-description-cn: "`tradability` 值最后更新时间（毫秒时间戳）。"
+                        overnightSupported:
+                          type: boolean
+                          example: true
+                          description: Whether the symbol supports overnight trading.
+                          x-description-cn: 该 symbol 是否支持夜盘交易。
+                        fractionable:
+                          type: boolean
+                          example: true
+                          description: Whether fractional shares are supported during the regular session.
+                          x-description-cn: 常规时段是否支持分数股。
+                        fractionableEh:
+                          type: boolean
+                          example: false
+                          description: Whether fractional shares are supported during extended hours.
+                          x-description-cn: 延长时段是否支持分数股。
+                        extendedSession:
+                          type: boolean
+                          example: true
+                          description: Whether extended-session trading is enabled.
+                          x-description-cn: 是否启用延长时段交易。
+                        maxNumOrders:
+                          type: integer
+                          example: 200
+                          description: Maximum number of open orders a user may have for this symbol.
+                          x-description-cn: 用户对此 symbol 可持有的最大挂单数。
+                        stepSize:
+                          type: string
+                          example: "0.000000001"
+                          description: Lot size — minimum increment for `quantity`.
+                          x-description-cn: "`quantity` 的最小步长（手数）。"
+                        multiplierUp:
+                          type: string
+                          example: "1.10"
+                          description: Upper price multiplier limit relative to reference.
+                          x-description-cn: 相对参考价格的上限倍率。
+                        multiplierDown:
+                          type: string
+                          example: "0.90"
+                          description: Lower price multiplier limit relative to reference.
+                          x-description-cn: 相对参考价格的下限倍率。
+                        minQty:
+                          type: string
+                          example: "0.000000001"
+                          description: Minimum allowed `quantity`.
+                          x-description-cn: 允许的最小 `quantity`。
+                        maxQty:
+                          type: string
+                          example: "100000.00000000"
+                          description: Maximum allowed `quantity`.
+                          x-description-cn: 允许的最大 `quantity`。
+                        minNotional:
+                          type: string
+                          example: "1.00"
+                          description: Minimum order notional (USD).
+                          x-description-cn: 最小订单名义金额（USD）。
+                        maxNotional:
+                          type: string
+                          example: "1000000.00"
+                          description: Maximum order notional (USD).
+                          x-description-cn: 最大订单名义金额（USD）。
+                        listingTime:
+                          type: integer
+                          format: int64
+                          example: 1700000000000
+                          description: Listing timestamp (ms epoch).
+                          x-description-cn: 上架时间（毫秒时间戳）。
+                        delistingTime:
+                          type: integer
+                          format: int64
+                          nullable: true
+                          example: null
+                          description: Scheduled delisting timestamp (ms epoch); `null` if not scheduled for delisting.
+                          x-description-cn: 计划下架时间（毫秒时间戳）；未计划下架时为 `null`。
+  /sapi/v1/equity/market/tokenized-assets:
+    get:
+      summary: Tokenized Assets (MARKET_DATA)
+      x-summary-cn: 代币化资产列表 (MARKET_DATA)
+      description: >-
+        Returns the list of all tokenized assets currently available for mint / redeem, together with each asset's
+        underlying equity symbol and conversion multiplier. MARKET_DATA endpoint — requires an API key (`X-MBX-APIKEY`)
+        but no signature. Response is served from a server-side cache.
+      x-description-cn: 返回当前可铸造 / 赎回的全部代币化资产列表，包含每个资产的标的美股 Symbol 和转换倍数。MARKET_DATA 接口——需携带 API key（`X-MBX-APIKEY`），但无需签名。响应来自服务端缓存。
+      tags:
+        - market-data
+      operationId: tokenizedAssets
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/market-data#tokenized-assets
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/MarketDataApi/tokenizedAssets.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/market_data_api/tokenized_assets.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/MarketData/tokenized_assets.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/marketdata/TokenizedAssetsExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/MarketDataAPI/TokenizedAssets/TokenizedAssets.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/marketdata/TokenizedAssetsExample.php
+      x-security-type: MARKET_DATA
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+      responses:
+        "200":
+          description: Tokenized Assets
+          x-description-cn: 代币化资产列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    assetCode:
+                      type: string
+                      example: AAPLB
+                      description: Tokenized asset code, e.g. `AAPLB`.
+                      x-description-cn: 代币化资产代码，例如 `AAPLB`。
+                    assetName:
+                      type: string
+                      example: Apple Inc. Tokenized Stock
+                      description: Human-readable display name of the tokenized asset.
+                      x-description-cn: 代币化资产的人类可读名称。
+                    underlyingEquitySymbol:
+                      type: string
+                      example: AAPL
+                      description: >-
+                        Underlying US-equity ticker, e.g. `AAPL`. Use this when calling `/tokenized/mint` or
+                        `/tokenized/redeem`.
+                      x-description-cn: 标的美股 ticker，例如 `AAPL`。调用 `/tokenized/mint` 或 `/tokenized/redeem` 时使用此字段。
+                    multiplier:
+                      type: string
+                      example: "1"
+                      description: Conversion multiplier between the underlying equity and the tokenized asset.
+                      x-description-cn: 标的股票与代币化资产之间的转换倍数。
+                    multiplierValid:
+                      type: boolean
+                      example: true
+                      description: Whether the multiplier is currently valid and applicable.
+                      x-description-cn: 当前倍数是否有效且可适用。
+  /sapi/v1/equity/market/quote:
+    get:
+      summary: Latest Quote (MARKET_DATA)
+      x-summary-cn: 最新报价 (MARKET_DATA)
+      description: >-
+        Returns the latest best bid / best ask for a single US-equity ticker. The returned value is at most ~5 seconds
+        stale. Returns an **empty response body** (not the literal `null`) when no quote is available for the supplied
+        ticker (e.g. the ticker is unknown, halted, or de-listed).
+      x-description-cn: 返回单只美股的最优买一 / 卖一报价，数据最多延迟约 5 秒。当指定 ticker 没有可用报价时（如未知、停牌或已下架）返回**空响应体**（非字面 `null`，客户端需容错）。
+      tags:
+        - market-data
+      operationId: latestQuote
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/market-data#latest-quote
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/MarketDataApi/latestQuote.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/market_data_api/latest_quote.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/MarketData/latest_quote.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/marketdata/LatestQuoteExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/MarketDataAPI/LatestQuote/LatestQuote.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/marketdata/LatestQuoteExample.php
+      x-security-type: MARKET_DATA
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+            example: AAPL
+          description: US-equity ticker, e.g. `AAPL`, `TSLA`. Case-insensitive; uppercased server-side.
+          x-description-cn: 美股 ticker，例如 `AAPL`、`TSLA`。大小写不敏感，服务端统一转为大写。
+      responses:
+        "200":
+          description: Latest Quote
+          x-description-cn: 最新报价
+          content:
+            application/json:
+              schema:
+                type: object
+                nullable: true
+                properties:
+                  symbol:
+                    type: string
+                    example: AAPL
+                    description: US-equity ticker.
+                    x-description-cn: 美股 ticker。
+                  bidPrice:
+                    type: string
+                    example: "180.50"
+                    description: Best bid price (USD).
+                    x-description-cn: 最优买一价（USD）。
+                  askPrice:
+                    type: string
+                    example: "180.52"
+                    description: Best ask price (USD).
+                    x-description-cn: 最优卖一价（USD）。
+                  bidSize:
+                    type: integer
+                    example: 100
+                    description: Best bid size (shares).
+                    x-description-cn: 最优买一量（股数）。
+                  askSize:
+                    type: integer
+                    example: 200
+                    description: Best ask size (shares).
+                    x-description-cn: 最优卖一量（股数）。
+  /sapi/v1/equity/order/place:
+    post:
+      summary: Place Equity Order (TRADE)
+      x-summary-cn: 下单 (TRADE)
+      description: |-
+        Place a new equity order. Supports all combinations of `LIMIT` /
+        `MARKET` × `BUY` / `SELL`. For `LIMIT BUY` orders the commission fee is
+        automatically computed and reserved by the server at placement time —
+        callers submit `price` and `quantity` only, no `fee` field is required.
+
+
+        **Field combination matrix**
+
+
+        | Side | OrderType | Required | Forbidden |
+        | ---- | --------- | -------- | --------- |
+        | BUY | LIMIT | `price`, `quantity`, `tradingSession` | `notional` |
+        | BUY | MARKET | `notional` | `price`, `quantity`, `tradingSession` |
+        | SELL | LIMIT | `price`, `quantity`, `tradingSession` | `notional` |
+        | SELL | MARKET | `quantity` | `price`, `notional`, `tradingSession` |
+
+
+        **Fractional shares**: when `quantity` has a decimal component, or an
+        order is placed by `notional`, it is treated as a fractional-share
+        order. A fractional-share `GTC` order must be paired with
+        `tradingSession = EXTENDED` or `24H`.
+
+
+        Rate limit: 200 requests / min (UID).
+      x-description-cn: |-
+        下一笔股票订单。支持 `LIMIT` / `MARKET` × `BUY` / `SELL`
+        的所有组合。对于 `LIMIT BUY`
+        订单，服务端在下单时自动计算并冻结手续费——调用方只需提交 `price` 和
+        `quantity`，无需传 `fee` 字段。
+
+
+        **字段组合矩阵**
+
+
+        | Side | OrderType | 必填 | 禁传 |
+        | ---- | --------- | ---- | ---- |
+        | BUY | LIMIT | `price`、`quantity`、`tradingSession` | `notional` |
+        | BUY | MARKET | `notional` | `price`、`quantity`、`tradingSession` |
+        | SELL | LIMIT | `price`、`quantity`、`tradingSession` | `notional` |
+        | SELL | MARKET | `quantity` | `price`、`notional`、`tradingSession` |
+
+
+        **碎股**：当 `quantity` 带小数，或使用 `notional`
+        下单时，订单被视为碎股订单。碎股 `GTC` 订单必须搭配 `tradingSession =
+        EXTENDED` 或 `24H`。
+
+
+        频率限制：200 次 / 分钟（UID）。
+      tags:
+        - trade
+      operationId: placeEquityOrder
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/trade#place-equity-order
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TradeApi/placeEquityOrder.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/trade_api/place_equity_order.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Trade/place_equity_order.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/trade/PlaceEquityOrderExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TradeAPI/PlaceEquityOrder/PlaceEquityOrder.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/trade/PlaceEquityOrderExample.php
+      x-security-type: TRADE
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+            example: AAPL
+          description: >-
+            US stock ticker, e.g. `AAPL`, `TSLA`. Must be a tradable US-equity symbol — verify via
+            `/sapi/v1/equity/market/exchangeInfo`. Tokenization enablement (verifiable via
+            `/sapi/v1/equity/market/tokenized-assets`) is *not* required; non-tokenized symbols are accepted and settle
+            as traditional underlying-equity trades. The `tokenize` parameter only takes effect on tokenization-enabled
+            symbols and is silently ignored otherwise.
+          x-description-cn: >-
+            美股 ticker，如 `AAPL`、`TSLA`。必须是可交易的美股 symbol——可通过 `/sapi/v1/equity/market/exchangeInfo` 查询。是否已开启代币化（可通过
+            `/sapi/v1/equity/market/tokenized-assets` 查询）*并非*必要条件；未开启代币化的 symbol 同样可以下单，并以传统的底层股票交易方式结算。`tokenize` 参数仅在
+            symbol 已开启代币化时生效，否则会被静默忽略。
+        - name: quoteAsset
+          in: query
+          required: false
+          schema:
+            type: string
+            example: USDC
+          description: Quote asset. Defaults to `USDC`; must be within the server's allowed set.
+          x-description-cn: 计价资产，默认 `USDC`；必须在服务端允许集合内。
+        - name: side
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - BUY
+              - SELL
+            example: BUY
+          description: "`BUY` / `SELL`."
+          x-description-cn: "`BUY` / `SELL`。"
+        - name: orderType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - MARKET
+              - LIMIT
+            example: LIMIT
+          description: "`MARKET` / `LIMIT`."
+          x-description-cn: "`MARKET` / `LIMIT`。"
+        - name: price
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "180.50"
+          description: "**Required** for `LIMIT`; **forbidden** for `MARKET`. Maximum 2 decimal places."
+          x-description-cn: "`LIMIT` **必填**；`MARKET` **禁传**。最多 2 位小数。"
+        - name: quantity
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "1"
+          description: "**Required** for `LIMIT` (both sides) and `SELL MARKET`; **forbidden** for `BUY MARKET`."
+          x-description-cn: "`LIMIT`（买卖两侧）与 `SELL MARKET` **必填**；`BUY MARKET` **禁传**。"
+        - name: notional
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "1000.00"
+          description: "**Required** for `BUY MARKET`; **forbidden** for `LIMIT` and `SELL MARKET`."
+          x-description-cn: "`BUY MARKET` **必填**；`LIMIT` 与 `SELL MARKET` **禁传**。"
+        - name: timeInForce
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - DAY
+              - GTC
+            example: DAY
+          description: >-
+            `DAY` (default) / `GTC`. `GTC` is only supported for `LIMIT` orders; a fractional-share `GTC` order must be
+            paired with `tradingSession = EXTENDED` or `24H`.
+          x-description-cn: "`DAY`（默认）/ `GTC`。`GTC` 仅支持 `LIMIT` 订单；碎股 `GTC` 订单必须搭配 `tradingSession = EXTENDED` 或 `24H`。"
+        - name: tradingSession
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - RTH
+              - EXTENDED
+              - 24H
+            example: RTH
+          description: "`RTH` / `EXTENDED` / `24H`. **Required** for `LIMIT`; **forbidden** for `MARKET`."
+          x-description-cn: "`RTH` / `EXTENDED` / `24H`。`LIMIT` **必填**；`MARKET` **禁传**。"
+        - name: walletType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - CARD
+              - MAIN
+            example: CARD
+          description: "Payment wallet for `BUY` orders: `CARD` (default) / `MAIN`. `SELL` orders always settle to `CARD`."
+          x-description-cn: "`BUY` 侧付款钱包：`CARD`（默认）/ `MAIN`。`SELL` 侧固定结算至 `CARD`。"
+        - name: clientOrderId
+          in: query
+          required: false
+          schema:
+            type: string
+            example: web_2c9c92b74f1e4a7c8f3b9e1a2d3c4b5a
+          description: Client-supplied order id. Format `^[a-zA-Z0-9-_]{32,36}$`. Auto-generated when omitted.
+          x-description-cn: 客户端自定义订单 ID。格式 `^[a-zA-Z0-9-_]{32,36}$`。不传则服务端自动生成。
+        - name: tokenize
+          in: query
+          required: false
+          schema:
+            type: boolean
+            example: true
+          description: >-
+            Whether to tokenize the purchased stock asset upon settlement. Default `true`. Only takes effect when the
+            symbol is tokenization-enabled (check via `/market/tokenized-assets`); silently ignored for non-tokenized
+            symbols, which always settle as traditional underlying-equity trades.
+          x-description-cn: >-
+            结算后是否将买入的股票资产代币化。默认 `true`。仅在 symbol 已开启代币化（可通过 `/market/tokenized-assets` 查询）时生效；对于未开启代币化的 symbol
+            会被静默忽略，此类订单始终以传统的底层股票交易方式结算。
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Place Equity Order
+          x-description-cn: 下单响应
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: S
+                    description: >-
+                      Acknowledgement code: `S` = accepted, `F` = failed. Not an order lifecycle status — to poll
+                      lifecycle, call `/order/detail` or `/order/history`.
+                    x-description-cn: 请求确认码：`S` = 已接受，`F` = 失败。这不是订单生命周期状态——如需查询生命周期，请调用 `/order/detail` 或 `/order/history`。
+                  orderId:
+                    type: string
+                    example: c3c58f49-7b0d-4b9e-a2db-1a2f9a3b8c71
+                    description: Order id (UUID).
+                    x-description-cn: 订单 ID（UUID）。
+                  clientOrderId:
+                    type: string
+                    example: web_2c9c92b74f1e4a7c8f3b9e1a2d3c4b5a
+                    description: Echoes the supplied or server-generated client order id.
+                    x-description-cn: 回显提交的或服务端生成的客户端订单 ID。
+  /sapi/v1/equity/order/cancel:
+    post:
+      summary: Cancel Equity Order (TRADE)
+      x-summary-cn: 撤单 (TRADE)
+      description: Cancel a single open order by its `orderId`.
+      x-description-cn: 按 `orderId` 撤销单笔挂单。
+      tags:
+        - trade
+      operationId: cancelEquityOrder
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/trade#cancel-equity-order
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TradeApi/cancelEquityOrder.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/trade_api/cancel_equity_order.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Trade/cancel_equity_order.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/trade/CancelEquityOrderExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TradeAPI/CancelEquityOrder/CancelEquityOrder.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/trade/CancelEquityOrderExample.php
+      x-security-type: TRADE
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: orderId
+          in: query
+          required: true
+          schema:
+            type: string
+            example: c3c58f49-7b0d-4b9e-a2db-1a2f9a3b8c71
+          description: Equity order id returned by `/order/place` or a query endpoint.
+          x-description-cn: 由 `/order/place` 或查询接口返回的股票订单 ID。
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Cancel Equity Order
+          x-description-cn: 撤单响应
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderId:
+                    type: string
+                    example: c3c58f49-7b0d-4b9e-a2db-1a2f9a3b8c71
+                    description: Echoes the requested order id.
+                    x-description-cn: 回显请求的订单 ID。
+                  status:
+                    type: string
+                    example: S
+                    description: >-
+                      Acknowledgement code: `S` = cancel accepted by upstream, `F` = cancel failed. Not an order
+                      lifecycle status — use `/order/detail` for lifecycle poll.
+                    x-description-cn: 请求确认码：`S` = 撤单已被上游接受，`F` = 撤单失败。这不是订单生命周期状态——如需查询生命周期请使用 `/order/detail`。
+  /sapi/v1/equity/order/cancel-all:
+    post:
+      summary: Cancel All Equity Orders (TRADE)
+      x-summary-cn: 全部撤单 (TRADE)
+      description: >-
+        Cancel all open orders for the caller. No request body is required — the scope is all of the caller's open
+        orders. The downstream service handles idempotency; to inspect per-order outcomes, query `/order/history` after
+        the call.
+      x-description-cn: 撤销调用方所有未成交订单。无需额外请求参数——范围固定为调用方所有未成交订单。下游服务保证幂等性；如需查看每笔订单的结果，请在调用后查询 `/order/history`。
+      tags:
+        - trade
+      operationId: cancelAllEquityOrders
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/trade#cancel-all-equity-orders
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TradeApi/cancelAllEquityOrders.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/trade_api/cancel_all_equity_orders.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Trade/cancel_all_equity_orders.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/trade/CancelAllEquityOrdersExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TradeAPI/CancelAllEquityOrders/CancelAllEquityOrders.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/trade/CancelAllEquityOrdersExample.php
+      x-security-type: TRADE
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Cancel All Equity Orders
+          x-description-cn: 全部撤单响应
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                    description: >-
+                      `true` when the cancel-all request was accepted by upstream. Per-order outcomes live in
+                      `/order/history`.
+                    x-description-cn: 撤单请求被上游接受时为 `true`。每笔订单的结果请查询 `/order/history`。
+  /sapi/v1/equity/order/open-orders:
+    get:
+      summary: Current Open Orders (USER_DATA)
+      x-summary-cn: 当前挂单 (USER_DATA)
+      description: >-
+        Query all unfinished (open) orders for the caller. No business parameters are needed — user identity is derived
+        from the signature.
+      x-description-cn: 查询调用方所有未完成（挂单中）的股票订单。无需业务参数——用户身份由签名推导。
+      tags:
+        - trade
+      operationId: currentOpenOrders
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/trade#current-open-orders
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TradeApi/currentOpenOrders.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/trade_api/current_open_orders.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Trade/current_open_orders.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/trade/CurrentOpenOrdersExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TradeAPI/CurrentOpenOrders/CurrentOpenOrders.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/trade/CurrentOpenOrdersExample.php
+      x-security-type: USER_DATA
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Current Open Orders
+          x-description-cn: 当前挂单响应
+          content:
+            application/json:
+              schema:
+                type: array
+                description: Array of open order objects. Fields are identical to the order rows in Equity Order History.
+                x-description-cn: 挂单对象数组。字段与订单历史中的订单行一致。
+                items:
+                  type: object
+                  properties:
+                    orderId:
+                      type: string
+                      example: c3c58f49-7b0d-4b9e-a2db-1a2f9a3b8c71
+                      description: Equity order id.
+                      x-description-cn: 股票订单 ID。
+                    symbol:
+                      type: string
+                      example: AAPL
+                      description: US-equity ticker.
+                      x-description-cn: 美股 ticker。
+                    quote:
+                      type: string
+                      example: USDC
+                      description: Quote asset (e.g. `USDC`).
+                      x-description-cn: 计价资产（如 `USDC`）。
+                    side:
+                      type: string
+                      example: BUY
+                      description: "`BUY` / `SELL`."
+                      x-description-cn: "`BUY` / `SELL`。"
+                    orderType:
+                      type: string
+                      example: LIMIT
+                      description: "`MARKET` / `LIMIT`."
+                      x-description-cn: "`MARKET` / `LIMIT`。"
+                    limitPrice:
+                      type: string
+                      nullable: true
+                      example: "180.50"
+                      description: Limit price (USD). Non-null for `LIMIT` orders, `null` for `MARKET`.
+                      x-description-cn: 限价（USD）。`LIMIT` 订单非空，`MARKET` 订单为 `null`。
+                    avgFilledPrice:
+                      type: string
+                      nullable: true
+                      example: null
+                      description: Average fill price (USD). `null` until the first fill.
+                      x-description-cn: 平均成交价（USD）。首笔成交前为 `null`。
+                    qty:
+                      type: string
+                      nullable: true
+                      example: "1"
+                      description: Requested quantity. `null` for `BUY MARKET` (use `notional` instead).
+                      x-description-cn: 请求股数。`BUY MARKET` 时为 `null`（使用 `notional` 替代）。
+                    notional:
+                      type: string
+                      nullable: true
+                      example: null
+                      description: Requested notional. Non-null for `BUY MARKET`; `null` otherwise.
+                      x-description-cn: 请求名义金额。`BUY MARKET` 非空；其他情况为 `null`。
+                    filledQty:
+                      type: string
+                      example: "0"
+                      description: Cumulative filled quantity.
+                      x-description-cn: 累计成交数量。
+                    filledTotal:
+                      type: string
+                      nullable: true
+                      example: null
+                      description: Cumulative filled notional. Populated only for `BUY MARKET`.
+                      x-description-cn: 累计成交名义金额，仅 `BUY MARKET` 有值。
+                    fee:
+                      type: string
+                      example: "0"
+                      description: Total commission fee (USD).
+                      x-description-cn: 总手续费（USD）。
+                    session:
+                      type: string
+                      nullable: true
+                      example: RTH
+                      description: >-
+                        Trading session the order was placed under: `RTH` / `EXTENDED` / `24H`. `null` for `MARKET`
+                        orders.
+                      x-description-cn: 下单时的交易时段：`RTH` / `EXTENDED` / `24H`。`MARKET` 订单为 `null`。
+                    status:
+                      type: string
+                      example: NEW
+                      description: >-
+                        Order lifecycle status — one of `NEW` / `ACCEPTED` / `PARTIALLY_FILLED` / `FILLED` / `CANCELED`
+                        / `EXPIRED` / `REJECTED`.
+                      x-description-cn: >-
+                        订单生命周期状态，取值之一：`NEW` / `ACCEPTED` / `PARTIALLY_FILLED` / `FILLED` / `CANCELED` / `EXPIRED` /
+                        `REJECTED`。
+                    createdAt:
+                      type: integer
+                      format: int64
+                      example: 1735900000000
+                      description: Order creation time (ms epoch).
+                      x-description-cn: 订单创建时间（毫秒时间戳）。
+                    updatedAt:
+                      type: integer
+                      format: int64
+                      example: 1735900000000
+                      description: Last update time (ms epoch).
+                      x-description-cn: 最后更新时间（毫秒时间戳）。
+  /sapi/v1/equity/order/history:
+    get:
+      summary: Equity Order History (USER_DATA)
+      x-summary-cn: 订单历史 (USER_DATA)
+      description: Paged order history for the caller. Filters by symbol, order type, side, status, and time range.
+      x-description-cn: 调用方的分页订单历史，可按 symbol、订单类型、方向、状态和时间段过滤。
+      tags:
+        - trade
+      operationId: equityOrderHistory
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/trade#equity-order-history
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TradeApi/equityOrderHistory.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/trade_api/equity_order_history.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Trade/equity_order_history.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/trade/EquityOrderHistoryExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TradeAPI/EquityOrderHistory/EquityOrderHistory.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/trade/EquityOrderHistoryExample.php
+      x-security-type: USER_DATA
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+            example: NVDA
+          description: US-equity ticker filter, e.g. `NVDA`.
+          x-description-cn: 美股 ticker 过滤，例如 `NVDA`。
+        - name: orderType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - MARKET
+              - LIMIT
+            example: LIMIT
+          description: "Order type filter: `MARKET` / `LIMIT`."
+          x-description-cn: 订单类型过滤：`MARKET` / `LIMIT`。
+        - name: side
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - BUY
+              - SELL
+            example: BUY
+          description: "Side filter: `BUY` / `SELL`."
+          x-description-cn: 方向过滤：`BUY` / `SELL`。
+        - name: orderStatus
+          in: query
+          required: false
+          schema:
+            type: string
+            example: FILLED,CANCELED
+          description: >-
+            Comma-separated status filter. Allowed values: `FILLED`, `PARTIALLY_FILLED`, `CANCELED`, `EXPIRED`,
+            `REJECTED`.
+          x-description-cn: 逗号分隔的状态过滤，允许值：`FILLED`、`PARTIALLY_FILLED`、`CANCELED`、`EXPIRED`、`REJECTED`。
+        - name: startTime
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1735800000000
+          description: Start time (ms epoch).
+          x-description-cn: 开始时间（毫秒时间戳）。
+        - name: endTime
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1735900000000
+          description: End time (ms epoch).
+          x-description-cn: 结束时间（毫秒时间戳）。
+        - name: current
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 1
+          description: Page number, 1-based. Default `1`.
+          x-description-cn: 页码，从 1 起，默认 `1`。
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 20
+          description: Page size. Default `20`, max `100`.
+          x-description-cn: 每页大小，默认 `20`，最大 `100`。
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Equity Order History
+          x-description-cn: 订单历史
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    format: int64
+                    example: 2
+                    description: Total number of rows matching the filter.
+                    x-description-cn: 符合过滤条件的总行数。
+                  page:
+                    type: integer
+                    example: 1
+                    description: Current page (echoes `current`).
+                    x-description-cn: 当前页码（回显 `current`）。
+                  size:
+                    type: integer
+                    example: 20
+                    description: Current page size (echoes `size`).
+                    x-description-cn: 当前页大小（回显 `size`）。
+                  rows:
+                    type: array
+                    description: Order rows on this page. Empty array if nothing matches.
+                    x-description-cn: 本页订单列表，无匹配时为空数组。
+                    items:
+                      type: object
+                      properties:
+                        orderId:
+                          type: string
+                          example: c3c58f49-7b0d-4b9e-a2db-1a2f9a3b8c71
+                          description: Equity order id.
+                          x-description-cn: 股票订单 ID。
+                        symbol:
+                          type: string
+                          example: AAPL
+                          description: US-equity ticker.
+                          x-description-cn: 美股 ticker。
+                        quote:
+                          type: string
+                          example: USDC
+                          description: Quote asset (e.g. `USDC`).
+                          x-description-cn: 计价资产（如 `USDC`）。
+                        side:
+                          type: string
+                          example: BUY
+                          description: "`BUY` / `SELL`."
+                          x-description-cn: "`BUY` / `SELL`。"
+                        orderType:
+                          type: string
+                          example: LIMIT
+                          description: "`MARKET` / `LIMIT`."
+                          x-description-cn: "`MARKET` / `LIMIT`。"
+                        limitPrice:
+                          type: string
+                          nullable: true
+                          example: "180.50"
+                          description: Limit price (USD). Non-null for `LIMIT` orders, `null` for `MARKET`.
+                          x-description-cn: 限价（USD）。`LIMIT` 订单非空，`MARKET` 订单为 `null`。
+                        avgFilledPrice:
+                          type: string
+                          nullable: true
+                          example: "180.48"
+                          description: >-
+                            Average fill price (USD). `null` until the first fill. For `MARKET` orders this is the only
+                            meaningful price field.
+                          x-description-cn: 平均成交价（USD）。首笔成交前为 `null`。对 `MARKET` 订单，这是唯一有意义的价格字段。
+                        qty:
+                          type: string
+                          nullable: true
+                          example: "1"
+                          description: Requested quantity. `null` for `BUY MARKET` (use `notional` instead).
+                          x-description-cn: 请求股数。`BUY MARKET` 时为 `null`（使用 `notional` 替代）。
+                        notional:
+                          type: string
+                          nullable: true
+                          example: null
+                          description: Requested notional. Non-null for `BUY MARKET`; `null` otherwise.
+                          x-description-cn: 请求名义金额。`BUY MARKET` 非空；其他情况为 `null`。
+                        filledQty:
+                          type: string
+                          example: "1"
+                          description: Cumulative filled quantity.
+                          x-description-cn: 累计成交数量。
+                        filledTotal:
+                          type: string
+                          nullable: true
+                          example: null
+                          description: Cumulative filled notional. Populated only for `BUY MARKET`.
+                          x-description-cn: 累计成交名义金额，仅 `BUY MARKET` 有值。
+                        fee:
+                          type: string
+                          example: "0.10"
+                          description: Total commission fee (USD).
+                          x-description-cn: 总手续费（USD）。
+                        session:
+                          type: string
+                          nullable: true
+                          example: RTH
+                          description: >-
+                            Trading session the order was placed under: `RTH` / `EXTENDED` / `24H`. `null` for `MARKET`
+                            orders.
+                          x-description-cn: 下单时的交易时段：`RTH` / `EXTENDED` / `24H`。`MARKET` 订单为 `null`。
+                        status:
+                          type: string
+                          example: FILLED
+                          description: >-
+                            Order lifecycle status — one of `NEW` / `ACCEPTED` / `PARTIALLY_FILLED` / `FILLED` /
+                            `CANCELED` / `EXPIRED` / `REJECTED`.
+                          x-description-cn: >-
+                            订单生命周期状态，取值之一：`NEW` / `ACCEPTED` / `PARTIALLY_FILLED` / `FILLED` / `CANCELED` / `EXPIRED` /
+                            `REJECTED`。
+                        createdAt:
+                          type: integer
+                          format: int64
+                          example: 1735900000000
+                          description: Order creation time (ms epoch).
+                          x-description-cn: 订单创建时间（毫秒时间戳）。
+                        updatedAt:
+                          type: integer
+                          format: int64
+                          example: 1735900120000
+                          description: Last update time (ms epoch).
+                          x-description-cn: 最后更新时间（毫秒时间戳）。
+  /sapi/v1/equity/order/detail:
+    get:
+      summary: Equity Order Detail (USER_DATA)
+      x-summary-cn: 订单详情 (USER_DATA)
+      description: >-
+        Returns a single order along with its trade execution list. Callers can only read their own orders — the user
+        identity is derived from the signed request.
+      x-description-cn: 返回单笔订单及其成交明细列表。调用方只能查询自己的订单——用户身份从签名请求中解析。
+      tags:
+        - trade
+      operationId: equityOrderDetail
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/trade#equity-order-detail
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TradeApi/equityOrderDetail.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/trade_api/equity_order_detail.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Trade/equity_order_detail.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/trade/EquityOrderDetailExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TradeAPI/EquityOrderDetail/EquityOrderDetail.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/trade/EquityOrderDetailExample.php
+      x-security-type: USER_DATA
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: orderId
+          in: query
+          required: false
+          schema:
+            type: string
+            example: c3c58f49-7b0d-4b9e-a2db-1a2f9a3b8c71
+          description: Equity order id. Either `orderId` or `clientOrderId` must be provided.
+          x-description-cn: 股票订单 ID。`orderId` 与 `clientOrderId` 必须提供其中一个。
+        - name: clientOrderId
+          in: query
+          required: false
+          schema:
+            type: string
+            example: web_2c9c92b74f1e4a7c8f3b9e1a2d3c4b5a
+          description: Client-supplied order id. Either `orderId` or `clientOrderId` must be provided.
+          x-description-cn: 客户端自定义订单 ID。`orderId` 与 `clientOrderId` 必须提供其中一个。
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Equity Order Detail
+          x-description-cn: 订单详情
+          content:
+            application/json:
+              schema:
+                type: object
+                description: >-
+                  Top-level fields mirror an order row from `/order/history` (orderId, symbol, quote, side, orderType,
+                  limitPrice, avgFilledPrice, qty, notional, filledQty, filledTotal, fee, session, status, createdAt,
+                  updatedAt), plus a `trades` array. `clientOrderId` is present only in Order Detail, not in Order
+                  History.
+                x-description-cn: >-
+                  顶级字段与 `/order/history`
+                  的订单行完全一致（orderId、symbol、quote、side、orderType、limitPrice、avgFilledPrice、qty、notional、filledQty、filledTotal、fee、session、status、createdAt、updatedAt），另附
+                  `trades` 数组。`clientOrderId` 仅订单详情接口返回，订单历史接口不包含此字段。
+                properties:
+                  orderId:
+                    type: string
+                    example: c3c58f49-7b0d-4b9e-a2db-1a2f9a3b8c71
+                    description: Equity order id.
+                    x-description-cn: 股票订单 ID。
+                  clientOrderId:
+                    type: string
+                    example: web_2c9c92b74f1e4a7c8f3b9e1a2d3c4b5a
+                    description: Client-supplied order id. Present only in Order Detail, not in Order History.
+                    x-description-cn: 客户端自定义订单 ID。仅订单详情接口返回，订单历史接口不包含此字段。
+                  symbol:
+                    type: string
+                    example: AAPL
+                    description: US-equity ticker.
+                    x-description-cn: 美股 ticker。
+                  quote:
+                    type: string
+                    example: USDC
+                    description: Quote asset.
+                    x-description-cn: 计价资产。
+                  side:
+                    type: string
+                    example: BUY
+                    description: "`BUY` / `SELL`."
+                    x-description-cn: "`BUY` / `SELL`。"
+                  orderType:
+                    type: string
+                    example: LIMIT
+                    description: "`MARKET` / `LIMIT`."
+                    x-description-cn: "`MARKET` / `LIMIT`。"
+                  limitPrice:
+                    type: string
+                    nullable: true
+                    example: "180.50"
+                    description: Limit price (USD). Non-null for `LIMIT`, `null` for `MARKET`.
+                    x-description-cn: 限价（USD）。`LIMIT` 非空，`MARKET` 为 `null`。
+                  avgFilledPrice:
+                    type: string
+                    nullable: true
+                    example: "180.48"
+                    description: Average fill price (USD). Only present when the order has at least one fill.
+                    x-description-cn: 平均成交价（USD）。仅当订单至少有一笔成交时返回。
+                  qty:
+                    type: string
+                    nullable: true
+                    example: "1"
+                    description: Requested quantity.
+                    x-description-cn: 请求股数。
+                  notional:
+                    type: string
+                    nullable: true
+                    example: null
+                    description: Requested notional.
+                    x-description-cn: 请求名义金额。
+                  filledQty:
+                    type: string
+                    example: "1"
+                    description: Cumulative filled quantity.
+                    x-description-cn: 累计成交数量。
+                  filledTotal:
+                    type: string
+                    nullable: true
+                    example: null
+                    description: Cumulative filled notional.
+                    x-description-cn: 累计成交名义金额。
+                  fee:
+                    type: string
+                    example: "0.10"
+                    description: Total commission fee (USD).
+                    x-description-cn: 总手续费（USD）。
+                  session:
+                    type: string
+                    nullable: true
+                    example: RTH
+                    description: Trading session.
+                    x-description-cn: 交易时段。
+                  status:
+                    type: string
+                    example: FILLED
+                    description: Order lifecycle status.
+                    x-description-cn: 订单生命周期状态。
+                  createdAt:
+                    type: integer
+                    format: int64
+                    example: 1735900000000
+                    description: Order creation time (ms epoch).
+                    x-description-cn: 订单创建时间（毫秒时间戳）。
+                  updatedAt:
+                    type: integer
+                    format: int64
+                    example: 1735900120000
+                    description: Last update time (ms epoch).
+                    x-description-cn: 最后更新时间（毫秒时间戳）。
+                  trades:
+                    type: array
+                    description: Trade executions for this order, most recent first. Empty array when no fills.
+                    x-description-cn: 此订单的成交明细，最新成交在前。无成交时为空数组。
+                    items:
+                      type: object
+                      properties:
+                        executionId:
+                          type: string
+                          example: exec-20260504-0001
+                          description: Execution (fill) id.
+                          x-description-cn: 成交（逐笔）ID。
+                        executionAt:
+                          type: integer
+                          format: int64
+                          example: 1735900115000
+                          description: Execution time (ms epoch).
+                          x-description-cn: 成交时间（毫秒时间戳）。
+                        price:
+                          type: string
+                          example: "180.48"
+                          description: Fill price for this execution (USD).
+                          x-description-cn: 此笔成交价格（USD）。
+                        qty:
+                          type: string
+                          example: "1"
+                          description: Fill quantity.
+                          x-description-cn: 成交数量。
+  /sapi/v1/equity/trade/history:
+    get:
+      summary: Equity Trade History (USER_DATA)
+      x-summary-cn: 成交历史 (USER_DATA)
+      description: >-
+        Paged equity trade (per-fill) history for the caller. Each row is one execution, not one order — a partially
+        filled order produces multiple rows. Filters by symbol, side, specific `orderId`, and time range.
+      x-description-cn: 调用方的分页逐笔成交历史。每行为一笔执行，而非一笔订单——部分成交订单会产生多行。可按 symbol、方向、指定 `orderId` 和时间段过滤。
+      tags:
+        - trade
+      operationId: equityTradeHistory
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/trade#equity-trade-history
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TradeApi/equityTradeHistory.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/trade_api/equity_trade_history.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Trade/equity_trade_history.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/trade/EquityTradeHistoryExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TradeAPI/EquityTradeHistory/EquityTradeHistory.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/trade/EquityTradeHistoryExample.php
+      x-security-type: USER_DATA
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+            example: NVDA
+          description: US-equity ticker filter, e.g. `NVDA`.
+          x-description-cn: 美股 ticker 过滤，例如 `NVDA`。
+        - name: side
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - BUY
+              - SELL
+            example: BUY
+          description: "Side filter: `BUY` / `SELL`."
+          x-description-cn: 方向过滤：`BUY` / `SELL`。
+        - name: orderId
+          in: query
+          required: false
+          schema:
+            type: string
+            example: c3c58f49-7b0d-4b9e-a2db-1a2f9a3b8c71
+          description: Narrow the result to executions of a single order.
+          x-description-cn: 将结果限定为单笔订单的成交记录。
+        - name: startTime
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1735800000000
+          description: Start time (ms epoch).
+          x-description-cn: 开始时间（毫秒时间戳）。
+        - name: endTime
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1735900000000
+          description: End time (ms epoch).
+          x-description-cn: 结束时间（毫秒时间戳）。
+        - name: current
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 1
+          description: Page number, 1-based. Default `1`.
+          x-description-cn: 页码，从 1 起，默认 `1`。
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 20
+          description: Page size. Default `20`, max `100`.
+          x-description-cn: 每页大小，默认 `20`，最大 `100`。
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Equity Trade History
+          x-description-cn: 成交历史
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    format: int64
+                    example: 1
+                    description: Total number of rows matching the filter.
+                    x-description-cn: 符合过滤条件的总行数。
+                  page:
+                    type: integer
+                    example: 1
+                    description: Current page.
+                    x-description-cn: 当前页码。
+                  size:
+                    type: integer
+                    example: 20
+                    description: Current page size.
+                    x-description-cn: 当前页大小。
+                  rows:
+                    type: array
+                    description: Trade rows on this page. Empty when nothing matches.
+                    x-description-cn: 本页成交列表，无匹配时为空数组。
+                    items:
+                      type: object
+                      properties:
+                        executionId:
+                          type: string
+                          example: exec-20260504-0001
+                          description: Execution (per-fill) id.
+                          x-description-cn: 逐笔成交 ID。
+                        orderId:
+                          type: string
+                          example: c3c58f49-7b0d-4b9e-a2db-1a2f9a3b8c71
+                          description: The owning order's id.
+                          x-description-cn: 所属订单 ID。
+                        symbol:
+                          type: string
+                          example: AAPL
+                          description: US-equity ticker.
+                          x-description-cn: 美股 ticker。
+                        quote:
+                          type: string
+                          example: USDC
+                          description: Quote asset.
+                          x-description-cn: 计价资产。
+                        side:
+                          type: string
+                          example: BUY
+                          description: "`BUY` / `SELL`."
+                          x-description-cn: "`BUY` / `SELL`。"
+                        orderType:
+                          type: string
+                          example: LIMIT
+                          description: "`MARKET` / `LIMIT`."
+                          x-description-cn: "`MARKET` / `LIMIT`。"
+                        price:
+                          type: string
+                          example: "180.50"
+                          description: Execution price (USD).
+                          x-description-cn: 成交价格（USD）。
+                        qty:
+                          type: string
+                          example: "1"
+                          description: Executed quantity.
+                          x-description-cn: 成交数量。
+                        total:
+                          type: string
+                          example: "180.50"
+                          description: Notional of this execution (`qty × price`).
+                          x-description-cn: 此笔成交名义金额（`qty × price`）。
+                        executionAt:
+                          type: integer
+                          format: int64
+                          example: 1735900115000
+                          description: Execution time (ms epoch).
+                          x-description-cn: 成交时间（毫秒时间戳）。
+                        updatedAt:
+                          type: integer
+                          format: int64
+                          example: 1735900115200
+                          description: Last update time (ms epoch).
+                          x-description-cn: 最后更新时间（毫秒时间戳）。
+  /sapi/v1/equity/tokenized/mint:
+    post:
+      summary: Tokenized Mint (TRADE)
+      x-summary-cn: 铸造代币化资产 (TRADE)
+      description: >-
+        Mint a tokenized asset from an underlying equity holding. The caller's underlying equity (e.g. `AAPL`) is burned
+        (or locked), and the corresponding tokenized asset (e.g. `AAPLB`) is credited. The tokenized asset is resolved
+        server-side from `underlyingAsset`; callers only provide the underlying ticker and quantity. Mint is
+        asynchronous: the endpoint returns an `issuerRequestId` immediately with a transient status; poll
+        `/tokenized/convert-status` to observe the terminal state, or inspect `/tokenized/history` for the full record.
+        Rate limit: 50 requests / min (UID).
+      x-description-cn: >-
+        从标的股票持仓铸造代币化资产。调用方的标的股票（如 `AAPL`）被销毁（或锁定），对应代币化资产（如 `AAPLB`）被划入账户。目标代币由服务端根据 `underlyingAsset` 查找；调用方只需提供标的
+        ticker 和数量。铸造为异步操作：接口立即返回 `issuerRequestId` 及临时状态；轮询 `/tokenized/convert-status` 查看终态，或查询 `/tokenized/history`
+        获取完整记录。频率限制：50 次 / 分钟（UID）。
+      tags:
+        - tokenized
+      operationId: tokenizedMint
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/tokenized#tokenized-mint
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TokenizedApi/tokenizedMint.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/tokenized_api/tokenized_mint.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Tokenized/tokenized_mint.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/tokenized/TokenizedMintExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TokenizedAPI/TokenizedMint/TokenizedMint.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/tokenized/TokenizedMintExample.php
+      x-security-type: TRADE
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: underlyingAsset
+          in: query
+          required: true
+          schema:
+            type: string
+            example: AAPL
+          description: >-
+            Underlying US-equity ticker, e.g. `AAPL`, `TSLA`. Resolved against the active-symbol list; unknown tickers
+            return `-26004`. The target tokenized asset is looked up from this field via `/market/tokenized-assets`.
+          x-description-cn: >-
+            标的美股 ticker，例如 `AAPL`、`TSLA`。在上架 symbol 列表中解析；未知 ticker 返回 `-26004`。目标代币化资产通过 `/market/tokenized-assets`
+            接口根据此字段查找。
+        - name: underlyingAssetAmount
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "1"
+          description: Quantity of the underlying asset to mint from. Must be > 0.
+          x-description-cn: 铸造所需标的资产数量，必须大于 0。
+        - name: clientOrderId
+          in: query
+          required: false
+          schema:
+            type: string
+            example: mint-client-id-32chars-0000000001
+          description: Client order id for idempotency. Format `^[a-zA-Z0-9-_]{32,36}$`. Auto-generated when omitted.
+          x-description-cn: 客户端幂等 ID，格式 `^[a-zA-Z0-9-_]{32,36}$`，不传则自动生成。
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Tokenized Mint
+          x-description-cn: 铸造响应
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issuerRequestId:
+                    type: string
+                    example: mint-20260505-8f3b9e1a2d3c4b5a
+                    description: Server-assigned convert request id. Use it to poll `/tokenized/convert-status`.
+                    x-description-cn: 服务端分配的转换请求 ID，用于轮询 `/tokenized/convert-status`。
+                  status:
+                    type: string
+                    example: P
+                    enum:
+                      - P
+                      - S
+                      - F
+                    description: "Convert status code: `P` = processing, `S` = success, `F` = failed."
+                    x-description-cn: 转换状态码：`P` = 处理中，`S` = 成功，`F` = 失败。
+  /sapi/v1/equity/tokenized/redeem:
+    post:
+      summary: Tokenized Redeem (TRADE)
+      x-summary-cn: 赎回代币化资产 (TRADE)
+      description: >-
+        Redeem a tokenized asset back into the underlying equity. The caller's tokenized asset (e.g. `AAPLB`) is burned,
+        and the corresponding underlying equity (e.g. `AAPL`) is released. The underlying asset is resolved server-side
+        from `tokenizedAsset`; callers only provide the tokenized asset and quantity. Redeem is asynchronous: the
+        endpoint returns an `issuerRequestId` immediately with a transient status; poll `/tokenized/convert-status` to
+        observe the terminal state, or inspect `/tokenized/history` for the full record. Rate limit: 200 requests / min
+        (UID).
+      x-description-cn: >-
+        将代币化资产赎回为标的股票。调用方的代币化资产（如 `AAPLB`）被销毁，对应标的股票（如 `AAPL`）被释放。目标标的由服务端根据 `tokenizedAsset`
+        查找；调用方只需提供代币化资产和数量。赎回为异步操作：接口立即返回 `issuerRequestId` 及临时状态；轮询 `/tokenized/convert-status` 查看终态，或查询
+        `/tokenized/history` 获取完整记录。频率限制：200 次 / 分钟（UID）。
+      tags:
+        - tokenized
+      operationId: tokenizedRedeem
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/tokenized#tokenized-redeem
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TokenizedApi/tokenizedRedeem.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/tokenized_api/tokenized_redeem.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Tokenized/tokenized_redeem.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/tokenized/TokenizedRedeemExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TokenizedAPI/TokenizedRedeem/TokenizedRedeem.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/tokenized/TokenizedRedeemExample.php
+      x-security-type: TRADE
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: tokenizedAsset
+          in: query
+          required: true
+          schema:
+            type: string
+            example: AAPLB
+          description: >-
+            Tokenized asset to redeem, e.g. `AAPLB`. Not a US-equity ticker — this is the on-chain tokenized asset
+            identifier. Unknown asset returns `-1102` (the message currently says the parameter was empty/malformed, but
+            it was in fact sent — it is simply unknown). The target underlying ticker is looked up from this field via
+            `/market/tokenized-assets`.
+          x-description-cn: >-
+            要赎回的代币化资产，例如 `AAPLB`。这不是美股 ticker，而是链上代币化资产标识符。未知资产返回 `-1102`（当前报错信息称参数为空/畸形，但其实已发送、只是不存在）。目标标的 ticker 通过
+            `/market/tokenized-assets` 接口根据此字段查找。
+        - name: tokenizedAssetAmount
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "1"
+          description: Quantity of the tokenized asset to redeem. Must be > 0.
+          x-description-cn: 要赎回的代币化资产数量，必须大于 0。
+        - name: clientOrderId
+          in: query
+          required: false
+          schema:
+            type: string
+            example: redeem-client-id-32chars-000000001
+          description: Client order id for idempotency. Format `^[a-zA-Z0-9-_]{32,36}$`. Auto-generated when omitted.
+          x-description-cn: 客户端幂等 ID，格式 `^[a-zA-Z0-9-_]{32,36}$`，不传则自动生成。
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Tokenized Redeem
+          x-description-cn: 赎回响应
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issuerRequestId:
+                    type: string
+                    example: redeem-20260505-a1b2c3d4e5f6
+                    description: Server-assigned convert request id. Use it to poll `/tokenized/convert-status`.
+                    x-description-cn: 服务端分配的转换请求 ID，用于轮询 `/tokenized/convert-status`。
+                  status:
+                    type: string
+                    example: P
+                    enum:
+                      - P
+                      - S
+                      - F
+                    description: "Convert status code: `P` = processing, `S` = success, `F` = failed."
+                    x-description-cn: 转换状态码：`P` = 处理中，`S` = 成功，`F` = 失败。
+  /sapi/v1/equity/tokenized/convert-status:
+    get:
+      summary: Tokenized Convert Status (USER_DATA)
+      x-summary-cn: 代币化转换状态 (USER_DATA)
+      description: >-
+        Query the current status of a single mint / redeem request by its `issuerRequestId`. Returns an empty object
+        when no record matches (caller's ID scope only).
+      x-description-cn: 通过 `issuerRequestId` 查询单笔铸造 / 赎回请求的当前状态。无匹配记录时返回空对象（仅限调用方 ID 范围）。
+      tags:
+        - tokenized
+      operationId: tokenizedConvertStatus
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/tokenized#tokenized-convert-status
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TokenizedApi/tokenizedConvertStatus.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/tokenized_api/tokenized_convert_status.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Tokenized/tokenized_convert_status.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/tokenized/TokenizedConvertStatusExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TokenizedAPI/TokenizedConvertStatus/TokenizedConvertStatus.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/tokenized/TokenizedConvertStatusExample.php
+      x-security-type: USER_DATA
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: issuerRequestId
+          in: query
+          required: true
+          schema:
+            type: string
+            example: mint-20260505-8f3b9e1a2d3c4b5a
+          description: Convert request id returned by `/tokenized/mint` or `/redeem`.
+          x-description-cn: 由 `/tokenized/mint` 或 `/tokenized/redeem` 返回的转换请求 ID。
+        - name: convertType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - MINT
+              - REDEEM
+            example: MINT
+          description: "`MINT` or `REDEEM`."
+          x-description-cn: "`MINT` 或 `REDEEM`。"
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Tokenized Convert Status
+          x-description-cn: 代币化转换状态
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Empty object `{}` when no record matches.
+                x-description-cn: 无匹配记录时返回空对象 `{}`。
+                properties:
+                  underlyingAsset:
+                    type: string
+                    example: AAPL
+                    description: Underlying US-equity ticker, e.g. `AAPL`.
+                    x-description-cn: 标的美股 ticker，例如 `AAPL`。
+                  underlyingAssetAmount:
+                    type: string
+                    example: "1.000000000"
+                    description: Quantity of the underlying asset involved.
+                    x-description-cn: 涉及的标的资产数量。
+                  tokenizedAsset:
+                    type: string
+                    example: AAPLB
+                    description: Tokenized asset, e.g. `AAPLB`.
+                    x-description-cn: 代币化资产，例如 `AAPLB`。
+                  tokenizedAssetAmount:
+                    type: string
+                    example: "1.000000000"
+                    description: Quantity of the tokenized asset involved.
+                    x-description-cn: 涉及的代币化资产数量。
+                  issuerRequestId:
+                    type: string
+                    example: mint-20260505-8f3b9e1a2d3c4b5a
+                    description: Echoes the requested id.
+                    x-description-cn: 回显请求的 ID。
+                  convertType:
+                    type: string
+                    example: MINT
+                    description: "`MINT` or `REDEEM`."
+                    x-description-cn: "`MINT` 或 `REDEEM`。"
+                  status:
+                    type: string
+                    example: S
+                    enum:
+                      - P
+                      - S
+                      - F
+                    description: "Convert status: `P` = processing, `S` = success, `F` = failed."
+                    x-description-cn: 转换状态：`P` = 处理中，`S` = 成功，`F` = 失败。
+                  createdAt:
+                    type: integer
+                    format: int64
+                    example: 1735900000000
+                    description: Creation time (ms epoch).
+                    x-description-cn: 创建时间（毫秒时间戳）。
+                  updatedAt:
+                    type: integer
+                    format: int64
+                    example: 1735900060000
+                    description: Last update time (ms epoch).
+                    x-description-cn: 最后更新时间（毫秒时间戳）。
+  /sapi/v1/equity/tokenized/history:
+    get:
+      summary: Tokenized Convert History (USER_DATA)
+      x-summary-cn: 代币化转换历史 (USER_DATA)
+      description: >-
+        Paged history of mint / redeem conversions for the caller. Cursor-style pagination — supply the `nextLastId`
+        from the previous page's response to fetch the next page.
+      x-description-cn: 调用方的分页铸造 / 赎回转换历史。游标分页——提供上一页响应中的 `nextLastId` 作为 `lastId` 来获取下一页。
+      tags:
+        - tokenized
+      operationId: tokenizedConvertHistory
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/tokenized#tokenized-convert-history
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/TokenizedApi/tokenizedConvertHistory.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/tokenized_api/tokenized_convert_history.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Tokenized/tokenized_convert_history.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/tokenized/TokenizedConvertHistoryExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/TokenizedAPI/TokenizedConvertHistory/TokenizedConvertHistory.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/tokenized/TokenizedConvertHistoryExample.php
+      x-security-type: USER_DATA
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: startTime
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 1735800000000
+          description: Start time (ms epoch).
+          x-description-cn: 开始时间（毫秒时间戳）。
+        - name: endTime
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 1735900000000
+          description: End time (ms epoch).
+          x-description-cn: 结束时间（毫秒时间戳）。
+        - name: lastId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 10019
+          description: Last record id from the previous page. Omit (or leave unset) to fetch the first page.
+          x-description-cn: 上一页最后一条记录的 ID。省略（或不传）表示从第一页开始。
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 20
+          description: Page size. Default `20`, max `100`.
+          x-description-cn: 每页大小，默认 `20`，最大 `100`。
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Tokenized Convert History
+          x-description-cn: 代币化转换历史
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rows:
+                    type: array
+                    description: Convert history rows on this page. Empty array if nothing matches.
+                    x-description-cn: 本页转换历史列表，无匹配时为空数组。
+                    items:
+                      type: object
+                      properties:
+                        underlyingAsset:
+                          type: string
+                          example: AAPL
+                          description: Underlying US-equity ticker, e.g. `AAPL`.
+                          x-description-cn: 标的美股 ticker，例如 `AAPL`。
+                        underlyingAssetAmount:
+                          type: string
+                          example: "1.000000000"
+                          description: Quantity of the underlying asset involved.
+                          x-description-cn: 涉及的标的资产数量。
+                        tokenizedAsset:
+                          type: string
+                          example: AAPLB
+                          description: Tokenized asset, e.g. `AAPLB`.
+                          x-description-cn: 代币化资产，例如 `AAPLB`。
+                        tokenizedAssetAmount:
+                          type: string
+                          example: "1.000000000"
+                          description: Quantity of the tokenized asset involved.
+                          x-description-cn: 涉及的代币化资产数量。
+                        issuerRequestId:
+                          type: string
+                          example: mint-20260505-8f3b9e1a2d3c4b5a
+                          description: Convert request id.
+                          x-description-cn: 转换请求 ID。
+                        convertType:
+                          type: string
+                          example: MINT
+                          description: "`MINT` or `REDEEM`."
+                          x-description-cn: "`MINT` 或 `REDEEM`。"
+                        status:
+                          type: string
+                          example: S
+                          enum:
+                            - P
+                            - S
+                            - F
+                          description: "Convert status: `P` = processing, `S` = success, `F` = failed."
+                          x-description-cn: 转换状态：`P` = 处理中，`S` = 成功，`F` = 失败。
+                        createdAt:
+                          type: integer
+                          format: int64
+                          example: 1735900000000
+                          description: Creation time (ms epoch).
+                          x-description-cn: 创建时间（毫秒时间戳）。
+                        updatedAt:
+                          type: integer
+                          format: int64
+                          example: 1735900060000
+                          description: Last update time (ms epoch).
+                          x-description-cn: 最后更新时间（毫秒时间戳）。
+                  hasMore:
+                    type: boolean
+                    example: true
+                    description: "`true` when more pages exist — pass `nextLastId` as `lastId` on the next request."
+                    x-description-cn: 还有更多页时为 `true`——将 `nextLastId` 作为下次请求的 `lastId`。
+                  nextLastId:
+                    type: integer
+                    format: int64
+                    example: 10020
+                    description: Pass this value as `lastId` on the next request to get the following page.
+                    x-description-cn: 将此值作为下次请求的 `lastId` 以获取下一页。
+  /sapi/v1/equity/account/disclaimer:
+    post:
+      summary: Sign US Equity Disclaimer (TRADE)
+      x-summary-cn: 签署美股免责声明 (TRADE)
+      description: >-
+        Records the user's acknowledgement and acceptance of the US equity disclaimer. This must be completed before the
+        account can access certain US equity trading features. The acceptance is tied to the account associated with the
+        API key.
+      x-description-cn: 记录用户对美股免责声明的确认与接受。账户必须先完成此步骤，才能使用部分美股交易功能。接受状态与该 API key 关联的账户绑定。
+      tags:
+        - account
+      operationId: signUsEquityDisclaimer
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/account#sign-us-equity-disclaimer
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/AccountApi/signUsEquityDisclaimer.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/account_api/sign_us_equity_disclaimer.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/Account/sign_us_equity_disclaimer.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/account/SignUsEquityDisclaimerExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/AccountAPI/SignUsEquityDisclaimer/SignUsEquityDisclaimer.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/account/SignUsEquityDisclaimerExample.php
+      x-security-type: TRADE
+      x-signed: true
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Sign US Equity Disclaimer
+          x-description-cn: 签署美股免责声明响应
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                    description: "`true` = acceptance recorded successfully."
+                    x-description-cn: "`true` = 已成功记录接受。"
+  /sapi/v1/equity/listenKey:
+    post:
+      summary: Create / Renew Listen Key (USER_STREAM)
+      x-summary-cn: 创建 / 续期 Listen Key (USER_STREAM)
+      description: >-
+        Create a new stock user-data-stream `listenKey`, or renew an existing one. Calling this endpoint for the same
+        user with an active `listenKey` extends its validity; if there is no active key, a new one is issued. Use the
+        returned `listenKey` to subscribe to the stock user data stream.
+      x-description-cn: >-
+        创建新的 股票用户数据流 `listenKey`，或对已有的 `listenKey` 续期。对同一用户调用此接口且有活跃 `listenKey` 时，会延长其有效期；无活跃 key 时则创建新 key。使用返回的
+        `listenKey` 订阅 股票用户数据流。
+      tags:
+        - user-data-streams
+      operationId: createRenewListenKey
+      externalDocs:
+        url: >-
+          https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/user-data-streams#create-renew-listen-key
+      x-connectors-examples:
+        ts: >-
+          https://raw.githubusercontent.com/binance/binance-connector-js/master/clients/stocks/examples/rest-api/UserDataStreamsApi/createRenewListenKey.ts
+        rust: >-
+          https://raw.githubusercontent.com/binance/binance-connector-rust/main/examples/stocks/rest_api/user_data_streams_api/create_renew_listen_key.rs
+        python: >-
+          https://raw.githubusercontent.com/binance/binance-connector-python/master/clients/stocks/examples/rest_api/UserDataStreams/create_renew_listen_key.py
+        java: >-
+          https://raw.githubusercontent.com/binance/binance-connector-java/master/examples/stocks/src/main/java/com/binance/connector/client/stocks/rest/userdatastreams/CreateRenewListenKeyExample.java
+        go: >-
+          https://raw.githubusercontent.com/binance/binance-connector-go/main/clients/stocks/examples/restapi/UserDataStreamsAPI/CreateRenewListenKey/CreateRenewListenKey.go
+        php: >-
+          https://raw.githubusercontent.com/binance/binance-connector-php/master/examples/stocks/userdatastreams/CreateRenewListenKeyExample.php
+      x-security-type: USER_STREAM
+      x-weight: 1
+      parameters:
+        - name: X-MBX-APIKEY
+          in: header
+          required: true
+          description: >-
+            An API Key is required to access this endpoint and must be included in the request headers. To create an API
+            Key, refer to:
+            [https://www.binance.com/en/support/faq/detail/360002502072](https://www.binance.com/en/support/faq/detail/360002502072).
+          x-description-cn: >-
+            访问此接口需要 API Key，并且必须在请求头中携带。关于如何创建 API
+            Key，请参考：[https://www.binance.com/cn/support/faq/detail/360002502072](https://www.binance.com/cn/support/faq/detail/360002502072)。
+          schema:
+            type: string
+            example: API_KEY
+        - name: recvWindow
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            example: 5000
+          description: The value cannot be greater than `60000`.
+          x-description-cn: 赋值不能大于 `60000`。
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1770736694138
+          description: Timestamp in milliseconds.
+          x-description-cn: 时间戳（毫秒）。
+      responses:
+        "200":
+          description: Create / Renew Listen Key
+          x-description-cn: 创建 / 续期 Listen Key 响应
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listenKey:
+                    type: string
+                    example: pqia91ma19a5s61cv6a81va65sdf19v8a65s1cv1zuz3ee1c5xz2ef6ad7
+                    description: Session identifier for the stock user data stream.
+                    x-description-cn: 股票用户数据流的会话标识符。

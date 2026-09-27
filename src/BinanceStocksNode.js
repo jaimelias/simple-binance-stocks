@@ -13,9 +13,9 @@ export default class BinanceStocks extends BinanceStocksCore {
 
     async transport(key, payload) {
 
-        binancePayloadAsserts[ke](payload);
-
         try {
+            binancePayloadAsserts[key](payload);
+            
             const endpoint = endpoints[key];
             return await nodeFetch(this, endpoint, payload);
         } catch (err) {
