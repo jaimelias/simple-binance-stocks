@@ -1,6 +1,9 @@
 import BinanceStocksCore from "./BinanceStocksCore.js";
-import { getSignature } from "./node/nodeCrypto.js";
+import { endpoints } from "./utilities/endpoints.js";
 import { nodeFetch } from "./node/nodeFetch.js";
+
+import * as binancePayloadAsserts from './utilities/binancePayloadAsserts.js';
+
 
 export default class BinanceStocks extends BinanceStocksCore {
 
@@ -9,6 +12,9 @@ export default class BinanceStocks extends BinanceStocksCore {
     }
 
     async transport(key, payload) {
+
+        binancePayloadAsserts[ke](payload);
+
         try {
             const endpoint = endpoints[key];
             return await nodeFetch(this, endpoint, payload);

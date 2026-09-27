@@ -1,4 +1,5 @@
 import { getNyMarketSession } from './utilities/getNyMarketSession.js'
+export { getNyMarketSession }
 
 /** Portable Stocks REST client. Network methods use the platform transport. */
 export default class BinanceStocksCore {
@@ -8,7 +9,6 @@ export default class BinanceStocksCore {
       ? options.errorLogger
       : (err) => {
         console.error(err)
-        return null;
       }
 
     this.baseUrl = options.baseUrl ?? 'https://api.binance.com';

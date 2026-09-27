@@ -1,13 +1,19 @@
 import BinanceStocksCore from "./BinanceStocksCore.js";
 import { endpoints } from "./utilities/endpoints.js";
 import { gasFetch } from "./gas/gasFetch.js";
+
+import * as binancePayloadAsserts from './utilities/binancePayloadAsserts.js';
+
 export default class BinanceStocks extends BinanceStocksCore {
 
     engine() {
         return 'gas';
     }
 
-    fetch(key, payload) {
+    transport(key, payload) {
+
+        binancePayloadAsserts[ke](payload);
+
         try {
             const endpoint = endpoints[key];
             return gasFetch(this, endpoint, payload);

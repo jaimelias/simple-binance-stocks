@@ -21,4 +21,7 @@
 - GAS class available in `src/BinanceStocksGas.js`. This class main purpose is to generate the GAS produciton build `dist/BinanceStocksGas.min.js`
 - It is not allowed to edit GAS produciton build, use command `npm run build` instead.
 - `src/utilities/decimal.js` provides exact decimal operations without external dependencies.
+- GAS specific files are stored in `src/gas` folder.
+- Node.js specific files are stored in `src/node` folder.
+- Binance Payload Asserts File `src/utilities/binancePayloadAsserts.js`.
 - Secrets `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_PROXY` are available for `read-only` (GET) test operation. It is not allowed perform any modify or update operations (DELETE, POST, PUT). It is not allowed to shared or log these secrets.
