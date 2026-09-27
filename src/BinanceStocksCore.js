@@ -12,7 +12,7 @@ export default class BinanceStocksCore {
     return getNyMarketSession()
   }
 
-  getQuote(symbol) {
+  quote(symbol) {
 
   }
 
