@@ -3,11 +3,10 @@
   "version": "0.1.0",
   "description": "USDC-based Binance Stocks REST library for Node.js and Google Apps Script",
   "type": "module",
-  "main": "index.js",
-  "files": ["index.js", "src", "dist/BinanceStocks.min.js", "docs", "AGENTS.md", "webpack.config.js"],
+  "main": "./src/BinanceStocksNode.js",
   "scripts": {
     "build": "webpack",
-    "test": "npm run build && node --test test/*.test.js",
+    "test": "node test/test.js",
     "prepack": "npm run build"
   },
   "engines": {
@@ -15,6 +14,7 @@
   },
   "license": "UNLICENSED",
   "devDependencies": {
+    "dotenv": "^18.0.4",
     "webpack": "^5.111.1",
     "webpack-cli": "^7.2.3"
   }

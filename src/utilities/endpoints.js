@@ -9,6 +9,7 @@ const conversionAck = value => object(value) && ['P', 'S', 'F'].includes(value.s
   (value.status === 'F' || nonEmpty(value.issuerRequestId))
 const successAck = value => object(value) && typeof value.success === 'boolean'
 const listenAck = value => object(value) && nonEmpty(value.listenKey)
+
 const fundingWallet = Object.freeze({
   path: '/sapi/v1/asset/get-funding-asset',
   method: 'POST',
