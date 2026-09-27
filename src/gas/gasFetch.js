@@ -21,11 +21,12 @@ const statusTextMap = {
  * @returns {Object|Array} Parsed Binance JSON response.
  * @throws {Error} When Binance returns a non-2xx HTTP status.
  */
-export const handleGasFetch = (main, endpoint, payload = {}) => {
+export const gasFetch = (main, endpoint, payload = {}) => {
   const {
     path,
     method,
     security,
+    allowEmpty,
     validateResponse,
     readOnly
   } = endpoint;
@@ -75,6 +76,7 @@ export const handleGasFetch = (main, endpoint, payload = {}) => {
   const responseText = response.getContentText();
 
   if (status >= 200 && status < 300) {
+    if (allowEmpty && !responseText.trim()) return null;
     return JSON.parse(responseText);
   }
 

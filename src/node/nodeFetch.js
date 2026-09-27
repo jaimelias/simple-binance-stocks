@@ -10,11 +10,12 @@ import { getSignature } from './nodeCrypto.js';
  * @returns {Promise<Object|Array>} Parsed Binance JSON response.
  * @throws {Error} When Binance returns a non-2xx HTTP status.
  */
-export const handleNodeFetch = async (main, endpoint, payload = {}) => {
+export const nodeFetch = async (main, endpoint, payload = {}) => {
     const {
         path,
         method,
         security,
+        allowEmpty,
         validateResponse,
         readOnly
     } = endpoint;
@@ -64,6 +65,7 @@ export const handleNodeFetch = async (main, endpoint, payload = {}) => {
   const responseText = await response.text();
 
   if (status >= 200 && status < 300) {
+    if (allowEmpty && !responseText.trim()) return null;
     return JSON.parse(responseText);
   }
 

@@ -8,12 +8,11 @@ export default class BinanceStocksCore {
     this.baseUrl = options.baseUrl ?? 'https://api.binance.com';
   }
 
-
   getNyMarketSession() {
     return getNyMarketSession()
   }
 
-  async getQuote(symbol) {
+  getQuote(symbol) {
 
   }
 
