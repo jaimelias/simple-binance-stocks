@@ -1,6 +1,6 @@
 /**
- * Payload assertions named exactly like the keys in endpoints.js.
- * Use: import * as binancePayloadAsserts from './binancePayloadAsserts.js'.
+ * Payload assertions named exactly like the keys in endpointsMaster.js.
+ * Use: import * as endpointAsserts from './endpointAsserts.js'.
  * Each assertion returns the original payload or throws TypeError, without mutation.
  * Validate before signing: headers/signature are transport-owned; timestamp and
  * recvWindow are optional here because the transports add them, but checked if supplied.
