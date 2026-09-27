@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`simple-binance-stocks` is an easy-to-use JavaScript library for trading Binance Stocks and ETFs. It is based on USDC and must work in Node.js and Google Apps Script.
+`simple-binance-stocks` is an easy-to-use JavaScript library for trading Binance Stocks and ETFs for Node.js and GAS (Google Apps Script).
 
 ## Product and API contract
 
@@ -16,8 +16,9 @@
 
 ## Implementation boundaries
 
-- `index.js` supplies Node.js cryptography; `src/BinanceStocks.js` contains the portable public API. Keep route definitions in `src/endpoints.js`, HTTP and signing in `src/transport.js`, and sizing and trading-rule validation in `src/orders.js`.
-- `src/decimal.js` provides exact decimal operations without external dependencies. Node.js consumes the ESM entry at `index.js` directly. `webpack.config.js` builds `src/googleAppsScript.js` into `dist/BinanceStocks.min.js` exclusively for Google Apps Script; regenerate that artifact after source changes.
-- It is not allowed to edit `dist/BinanceStocks.min.js`, all changes in should be executed with the command `npm run build`.
-- Secrets `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_PROXY` are available for `read-only` (GET) test operation. It is not allowed perform any modify or update operations (DELETE, POST, PUT). It is not allowed to shared these secrets. 
-- Sign the exact encoded parameters sent over the wire. Use millisecond timestamps and honor Binance's `recvWindow` rules. Do not log API keys, secrets, signatures, or full signed URLs.
+- Core abstract class available in `src/BinanceStocksCore.js`.
+- Node.js class available in `src/BinanceStocksNode.js`.
+- GAS class available in `src/BinanceStocksGas.js`. This class main purpose is to generate the GAS produciton build `dist/BinanceStocksGas.min.js`
+- It is not allowed to edit GAS produciton build, use command `npm run build` instead.
+- `src/utilities/decimal.js` provides exact decimal operations without external dependencies.
+- Secrets `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_PROXY` are available for `read-only` (GET) test operation. It is not allowed perform any modify or update operations (DELETE, POST, PUT). It is not allowed to shared or log these secrets.

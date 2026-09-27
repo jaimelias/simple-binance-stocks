@@ -15,3 +15,4 @@ glob_scan_max_depth = 12
 "**/node_modules/**" = "deny"
 "**/.git/**" = "deny"
 "**/dist/**" = "deny"
+"**/dist/BinanceStocksGas.min.js" = "deny"

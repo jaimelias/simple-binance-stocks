@@ -14,7 +14,6 @@ const statusTextMap = {
 
 /**
  * Executes a Binance REST request using Google Apps Script UrlFetchApp.
- * Secure endpoints receive an API key, timestamp, and HMAC signature.
  *
  * @param {Object} main Binance API configuration.
  * @param {Object} endpoint Endpoint configuration.
@@ -26,27 +25,24 @@ export const handleGasFetch = (main, endpoint, payload = {}) => {
   const {
     path,
     method,
-    security = 'NONE',
+    security,
+    validateResponse,
+    readOnly
   } = endpoint;
-
-  const normalizedMethod = method.toUpperCase();
-  const isSecure = security !== 'NONE';
 
   let url = `${main.baseUrl}/${path}`;
 
   const params = {
     ...payload,
+    timestamp: Date.now(),
+    recvWindow: 5000
   };
 
-  if (isSecure && params.timestamp == null) {
-    params.timestamp = Date.now();
-  }
 
-  const headers = {};
+  const headers = {
+    'X-MBX-APIKEY': main.API_KEY
+  };
 
-  if (isSecure) {
-    headers['X-MBX-APIKEY'] = main.API_KEY;
-  }
 
   const queryString = Object.entries(params)
     .filter(([, value]) => value !== undefined)
@@ -55,18 +51,16 @@ export const handleGasFetch = (main, endpoint, payload = {}) => {
     ))
     .join('&');
 
-  const requestData = isSecure
-    ? `${queryString}&signature=${getSignature(queryString, main.API_SECRET)}`
-    : queryString;
+  const requestData = `${queryString}&signature=${getSignature(queryString, main.API_SECRET)}`
 
   const options = {
-    method: normalizedMethod.toLowerCase(),
+    method: method.toLowerCase(),
     headers,
     muteHttpExceptions: true,
     escaping: false,
   };
 
-  if (['GET', 'DELETE'].includes(normalizedMethod)) {
+  if (['GET', 'DELETE'].includes(method)) {
     if (requestData) {
       url = `${url}?${requestData}`;
     }

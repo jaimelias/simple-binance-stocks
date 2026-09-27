@@ -11,48 +11,41 @@ import { getSignature } from './nodeCrypto.js';
  * @throws {Error} When Binance returns a non-2xx HTTP status.
  */
 export const handleNodeFetch = async (main, endpoint, payload = {}) => {
-  const {
-    path,
-    method,
-    security = 'NONE',
-  } = endpoint;
+    const {
+        path,
+        method,
+        security,
+        validateResponse,
+        readOnly
+    } = endpoint;
 
-  const normalizedMethod = method.toUpperCase();
-  const isSecure = security !== 'NONE';
+    let finalUrl = `${main.baseUrl}/${path}`;
 
-  let finalUrl = `${main.baseUrl}/${path}`;
+    const params = {
+        ...payload,
+        timestamp: Date.now(),
+        recvWindow: 5000
+    };
 
-  const params = {
-    ...payload,
-  };
+    const headers = {
+        'X-MBX-APIKEY': main.API_KEY
+    };
 
-  if (isSecure && params.timestamp == null) {
-    params.timestamp = Date.now();
-  }
+    const queryString = Object.entries(params)
+        .filter(([, value]) => value !== undefined)
+        .map(([key, value]) => (
+         `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
+        ))
+        .join('&');
 
-  const headers = {};
+    const requestData = `${queryString}&signature=${getSignature(queryString, main.API_SECRET)}`
 
-  if (isSecure) {
-    headers['X-MBX-APIKEY'] = main.API_KEY;
-  }
+    const options = {
+        method,
+        headers,
+    };
 
-  const queryString = Object.entries(params)
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => (
-      `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
-    ))
-    .join('&');
-
-  const requestData = isSecure
-    ? `${queryString}&signature=${getSignature(queryString, main.API_SECRET)}`
-    : queryString;
-
-  const options = {
-    method: normalizedMethod,
-    headers,
-  };
-
-  if (['GET', 'DELETE'].includes(normalizedMethod)) {
+  if (['GET', 'DELETE'].includes(method)) {
     if (requestData) {
       finalUrl = `${finalUrl}?${requestData}`;
     }
