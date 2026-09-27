@@ -31,7 +31,7 @@ export const gasFetch = (main, endpoint, payload = {}) => {
     readOnly
   } = endpoint;
 
-  let url = `${main.baseUrl}/${path}`;
+  let url = `${main.baseUrl}${path}`;
 
   const params = {
     ...payload,
@@ -76,8 +76,21 @@ export const gasFetch = (main, endpoint, payload = {}) => {
   const responseText = response.getContentText();
 
   if (status >= 200 && status < 300) {
-    if (allowEmpty && !responseText.trim()) return null;
-    return JSON.parse(responseText);
+    if (!responseText.trim()) {
+      if (allowEmpty) return null
+
+      throw new Error(
+        `Request succeeded with status ${status}, but returned an empty body`
+      )
+    }
+
+    const data = JSON.parse(responseText)
+
+    if (validateResponse && !validateResponse(data)) {
+      throw new Error('Binance returned an invalid response')
+    }
+
+    return data
   }
 
   const statusText = statusTextMap[status] || 'Unknown Status';
