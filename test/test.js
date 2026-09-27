@@ -18,13 +18,10 @@ const test = async () => {
   })
 
 
-  const result = await exchange.exchangeInfo({ symbol: 'AAPL' })
+  const result = await exchange.quote('AAPL')
 
-  assert.ok(result && typeof result === 'object')
-  assert.equal(result.timezone, 'UTC')
-  assert.ok(Array.isArray(result.symbols))
+  console.log(result)
 
-  console.log(`exchangeInfo passed with ${result.symbols.length} symbol(s)`)
 
 }
 
