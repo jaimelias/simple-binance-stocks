@@ -7,8 +7,13 @@ export default class BinanceStocks extends BinanceStocksCore {
         return 'gas';
     }
 
-    transport(key, payload) {
-        const endpoint = endpoints[key];
-        return gasFetch(this, endpoint, payload);
+    fetch(key, payload) {
+        try {
+            const endpoint = endpoints[key];
+            return gasFetch(this, endpoint, payload);
+        } catch (err) {
+            this.errorLogger(err)
+            throw err;
+        }
     }
 }
