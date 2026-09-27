@@ -6,7 +6,7 @@
 
 - Use Binance Stocks REST routes under `/sapi/v1/equity/`.
 - Use USDC as the library's quote and funding asset.
-- Send `X-MBX-APIKEY` and a signature on every REST request.
+- Send `X-MBX-APIKEY` for every REST endpoint currently exposed by this library. Sign `TRADE` and `USER_DATA` requests; `MARKET_DATA` and `USER_STREAM` requests do not require a signature.
 
 ## Order sizing with `amountInUSD`
 
