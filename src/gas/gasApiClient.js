@@ -3,7 +3,7 @@ import { endpoints } from "../utilities/endpointsMaster.js";
 import * as endpointAsserts from '../utilities/endpointAsserts.js';
 
 
-export const gasTransport = (main, key, payload) => {
+export const gasApiClient = (main, key, payload) => {
 
     try {
 

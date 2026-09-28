@@ -1,14 +1,14 @@
 import BinanceStocksCore from "./BinanceStocksCore.js";
-import { gasTransport } from "./gas/gasTransport.js";
+import { gasApiClient } from "./gas/gasApiClient.js";
 
 export default class BinanceStocks extends BinanceStocksCore {
-
-    constructor(options = {}) {
-        super(options, gasTransport)
-    }
 
     engine() {
         return 'gas';
     }
 
+    async apiClient(key, payload = {}) {
+
+        return gasApiClient(this, key, payload);
+    }
 }

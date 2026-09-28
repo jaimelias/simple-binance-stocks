@@ -17,11 +17,11 @@ const test = async () => {
     errorLogger: (err) => console.error(err)
   })
 
+  const symbol = 'AAPL';
+  const quote = await exchange.getQuote(symbol)
+  const symbolInfo = await exchange.getSymbolInfo(symbol)
 
-  const result = await exchange.getQuote('AAPL')
-
-  console.log(result)
-
+  console.log({quote, symbolInfo})
 
 }
 
