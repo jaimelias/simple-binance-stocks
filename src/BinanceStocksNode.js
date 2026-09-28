@@ -14,6 +14,11 @@ export default class BinanceStocks extends BinanceStocksCore {
     async transport(key, payload) {
 
         try {
+
+            if (typeof key !== 'string' || key === '' || !Object.hasOwn(endpointAsserts ?? {}, key)) {
+                throw new Error('Invalid #core request.');
+            }
+        
             endpointAsserts[key](payload);
             
             const endpoint = endpoints[key];

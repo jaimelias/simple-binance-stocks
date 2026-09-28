@@ -18,7 +18,7 @@ const test = async () => {
   })
 
 
-  const result = await exchange.quote('AAPL')
+  const result = await exchange.getQuote('AAPL')
 
   console.log(result)
 
