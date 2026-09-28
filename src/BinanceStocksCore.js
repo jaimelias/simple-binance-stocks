@@ -1,9 +1,29 @@
 import { getNyMarketSession } from './utilities/getNyMarketSession.js'
 import { endpoints } from './utilities/endpointsMaster.js'
 
+const transports = new WeakMap()
+
+const dispatchTransport = (client, key, payload = {})  => {
+  const transport = transports.get(client)
+
+  if (!transport) {
+    throw new TypeError('No transport adapter configured')
+  }
+
+  return transport(client, key, payload)
+}
+
+
 /** Portable Stocks REST client. Network methods use the platform transport. */
 export default class BinanceStocksCore {
-  constructor(options = {}) {
+
+  constructor(options = {}, transportAdapter) {
+
+    if (typeof transportAdapter !== 'function') {
+      throw new TypeError('A transport adapter is required')
+    }
+
+    transports.set(this, transportAdapter)
 
     this.errorLogger = typeof options.errorLogger === 'function' 
       ? options.errorLogger
@@ -16,16 +36,11 @@ export default class BinanceStocksCore {
     this.API_SECRET = options.API_SECRET;
   }
 
-  async #core(key, payload = {}) {
-
-    return this.transport(key, payload)
-  }
-
   getNyMarketSession() {
     return getNyMarketSession();
   }
 
   getQuote(symbol) {
-    return this.#core('quote', {symbol})
+    return dispatchTransport(this, 'quote', { symbol })
   }
 }
