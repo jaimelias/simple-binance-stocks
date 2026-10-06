@@ -3,7 +3,6 @@
 `simple-binance-stocks` is an easy-to-use JavaScript library for trading Binance Stocks and ETFs for Node.js and GAS (Google Apps Script).
 
 ## Product and API contract
-
 - Use Binance Stocks REST routes under `/sapi/v1/equity/`.
 - Use USDC as the library's quote and funding asset.
 - Send `X-MBX-APIKEY` for every REST endpoint currently exposed by this library. Sign `TRADE` and `USER_DATA` requests; `MARKET_DATA` and `USER_STREAM` requests do not require a signature.
@@ -16,6 +15,7 @@
 
 ## Implementation boundaries
 
+- Do not create legacy support for implemented change3
 - Core abstract class available in `src/BinanceStocksCore.js`.
 - Node.js class available in `src/BinanceStocksNode.js`.
 - GAS class available in `src/BinanceStocksGas.js`. This class main purpose is to generate the GAS produciton build `dist/BinanceStocksGas.min.js`
@@ -27,6 +27,14 @@
 - Binance Stocks API config rules in `src/utilities/endpointsMaster.js`.
 - Secrets `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_PROXY` are available for `read-only` (GET) test operation. It is not allowed perform any modify or update operations (DELETE, POST, PUT). It is not allowed to shared or log these secrets.
 
+## Before Coding
+- Rewrite code directly to the new signature, update all call sites, and never add backward-compatibility or legacy support.
+- Make surgical, minimal edits whenever a change can be done that way, touching only the lines that need to change and avoiding rewrites of unrelated code.
+
+## After Coding
+- Use the project `README.md` as the public API contract, updating this files if required.
+
 ## References
 
 - For Binance Stocks API reference read `docs/schema.yaml`.
+
