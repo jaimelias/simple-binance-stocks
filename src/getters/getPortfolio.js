@@ -3,7 +3,7 @@ import { publicOptions, decimalValue, reportNumber } from '../utilities/publicIn
 import { tradeHistory } from '../utilities/endpointAsserts.js'
 
 /** Round a value's weight to four decimal places with exact half-up ties. */
-function weight(value, total) {
+const weight = (value, total) => {
   if (total.isZero()) return null
   const scaled = value.times('10000')
   let rounded = scaled.divToInt(total)
@@ -12,7 +12,7 @@ function weight(value, total) {
 }
 
 /** Build an estimated current portfolio, preserving unavailable successful quotes as null. */
-export async function getPortfolio(main, options = {}) {
+export const getPortfolio = async (main, options = {}) => {
   const input = publicOptions(options, ['startTime', 'endTime', 'recvWindow'])
   const window = { startTime: 0, ...input }
   if (window.endTime === undefined) window.endTime = Date.now()

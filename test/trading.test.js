@@ -18,13 +18,13 @@ const limit = extra => ({ symbol: 'aapl', amountInUSD: 10, entryPrice: '3.00', t
 const direct = extra => ({ symbol: 'aapl', orderType: 'LIMIT', price: '3', quantity: '1', tradingSession: 'RTH', ...extra })
 
 /** Exercise the real adapters using deterministic, offline HTTP and GAS runtime substitutes. */
-function harness(t, Client) {
+const harness = (t, Client) => {
   const calls = []
   const errors = []
   const state = { rules: rules(), quote: { bidPrice: '3.00', askPrice: '3.01' },
     trades: page([]), funding: [], placement: { status: 'S', orderId: 'order-1', extra: null } }
   const original = { fetch: globalThis.fetch, UrlFetchApp: globalThis.UrlFetchApp, Utilities: globalThis.Utilities }
-  function request(url, options) {
+  const request = (url, options) => {
     const parsed = new URL(url)
     const payload = Object.fromEntries(new URLSearchParams(options.body ?? options.payload ?? parsed.search))
     const call = { path: parsed.pathname, method: options.method.toUpperCase(), payload, headers: options.headers }
@@ -54,7 +54,7 @@ function harness(t, Client) {
     const response = request(url, options)
     return { status: response.status, statusText: 'Mock', text: async () => response.body }
   }
-  globalThis.UrlFetchApp = { fetch(url, options) {
+  globalThis.UrlFetchApp = { fetch: (url, options) => {
     const response = request(url, options)
     return { getResponseCode: () => response.status, getContentText: () => response.body }
   } }

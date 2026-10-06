@@ -1,7 +1,7 @@
 import Decimal from './decimal.js'
 
 /** Copy only supported public options, rejecting likely caller mistakes. */
-export function publicOptions(value, fields) {
+export const publicOptions = (value, fields) => {
   if (value === null || typeof value !== 'object' ||
       ![Object.prototype, null].includes(Object.getPrototypeOf(value))) {
     throw new TypeError('Options must be a plain object')
@@ -16,7 +16,7 @@ export function publicOptions(value, fields) {
 }
 
 /** Normalize a ticker without relying on client state. */
-export function normalizeSymbol(value) {
+export const normalizeSymbol = (value) => {
   if (typeof value !== 'string' || !value.trim()) {
     throw new TypeError('symbol must be a non-empty string')
   }
@@ -24,7 +24,7 @@ export function normalizeSymbol(value) {
 }
 
 /** Parse public decimal inputs; response fields may require strings only. */
-export function decimalValue(value, field, { positive = true, stringOnly = false } = {}) {
+export const decimalValue = (value, field, { positive = true, stringOnly = false } = {}) => {
   if (stringOnly && typeof value !== 'string') throw new TypeError(`${field} must be a decimal string`)
   let decimal
   try {
@@ -37,7 +37,7 @@ export function decimalValue(value, field, { positive = true, stringOnly = false
 }
 
 /** Validate monetary convenience sizing before converting it to exact decimals. */
-export function orderAmount(value) {
+export const orderAmount = (value) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new TypeError('amountInUSD must be a finite number greater than zero')
   }
@@ -45,7 +45,7 @@ export function orderAmount(value) {
 }
 
 /** Convert a decimal for a report, rejecting overflow and loss of nonzero magnitude. */
-export function reportNumber(value) {
+export const reportNumber = (value) => {
   const number = Number(value.toString())
   if (!Number.isFinite(number) || (number === 0 && !value.isZero())) {
     throw new RangeError('Portfolio value is outside the representable numeric range')

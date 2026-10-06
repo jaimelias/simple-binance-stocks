@@ -3,7 +3,7 @@ import { placeOrder as assertOrder } from '../utilities/endpointAsserts.js'
 import { placementFields, placementPayload, loadOrderRules, submitOrder } from '../utilities/orderPreparation.js'
 
 /** Buy by notional, or size a market sell down using one current bid quote. */
-export async function createMarketOrder(main, options) {
+export const createMarketOrder = async (main, options) => {
   const { amountInUSD, ...params } = publicOptions(options, [...placementFields, 'amountInUSD'])
   const amount = orderAmount(amountInUSD)
   const payload = placementPayload({ ...params, orderType: 'MARKET',

@@ -1,15 +1,15 @@
 // Exact nonnegative decimal arithmetic for order sizes and wallet reports. Integer operations use
 // decimal digits so the same implementation works in Node.js and Apps Script.
-function trimInteger(value) {
+const trimInteger = (value) => {
   return value.replace(/^0+(?=\d)/, '');
 }
 
-function compareIntegers(left, right) {
+const compareIntegers = (left, right) => {
   if (left.length !== right.length) return left.length < right.length ? -1 : 1;
   return left === right ? 0 : left < right ? -1 : 1;
 }
 
-function addIntegers(left, right) {
+const addIntegers = (left, right) => {
   const result = [];
   let carry = 0;
   for (let i = left.length - 1, j = right.length - 1; i >= 0 || j >= 0 || carry; i--, j--) {
@@ -20,7 +20,7 @@ function addIntegers(left, right) {
   return trimInteger(result.reverse().join(''));
 }
 
-function subtractIntegers(left, right) {
+const subtractIntegers = (left, right) => {
   const result = [];
   let borrow = 0;
   for (let i = left.length - 1, j = right.length - 1; i >= 0; i--, j--) {
@@ -32,7 +32,7 @@ function subtractIntegers(left, right) {
   return trimInteger(result.reverse().join(''));
 }
 
-function multiplyIntegers(left, right) {
+const multiplyIntegers = (left, right) => {
   if (left === '0' || right === '0') return '0';
   const result = Array(left.length + right.length).fill(0);
   for (let i = left.length - 1; i >= 0; i--) {
@@ -48,7 +48,7 @@ function multiplyIntegers(left, right) {
   return trimInteger(result.join(''));
 }
 
-function divideIntegers(numerator, denominator) {
+const divideIntegers = (numerator, denominator) => {
   if (denominator === '0') throw new RangeError('Cannot divide by zero');
   if (compareIntegers(numerator, denominator) < 0) return { quotient: '0', remainder: numerator };
   if (denominator === '1') return { quotient: numerator, remainder: '0' };
@@ -70,7 +70,7 @@ function divideIntegers(numerator, denominator) {
   return { quotient: trimInteger(quotient), remainder };
 }
 
-function parts(digits, scale) {
+const parts = (digits, scale) => {
   digits = trimInteger(digits);
   if (digits === '0') return { digits, scale: 0 };
   while (scale > 0 && digits.endsWith('0')) {
@@ -80,7 +80,7 @@ function parts(digits, scale) {
   return { digits, scale };
 }
 
-function parse(value) {
+const parse = (value) => {
   if (value instanceof Decimal) return { digits: value.digits, scale: value.scale };
   if (typeof value !== 'number' && typeof value !== 'string') {
     throw new TypeError('Decimal value must be a finite number or plain decimal string');
@@ -98,13 +98,13 @@ function parse(value) {
   return parts(integer + fraction, fraction.length);
 }
 
-function fromParts(digits, scale) {
+const fromParts = (digits, scale) => {
   const result = Object.create(Decimal.prototype);
   Object.assign(result, parts(digits, scale));
   return Object.freeze(result);
 }
 
-function aligned(left, right) {
+const aligned = (left, right) => {
   const scale = Math.max(left.scale, right.scale);
   return {
     left: trimInteger(left.digits + '0'.repeat(scale - left.scale)),

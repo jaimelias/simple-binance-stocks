@@ -23,6 +23,8 @@ const client = new BinanceStocks({
 
 For GAS, run `npm run build` and load the generated `dist/BinanceStocksGas.min.js` in your Apps Script project. It exposes `BinanceStocks`; instantiate it with the same options, obtaining secrets from your chosen GAS secret storage. Use `await` in an async entry function. All twelve trading, history, wallet, and portfolio methods return Promises in both runtimes. GAS uses `UrlFetchApp` and `Utilities` internally.
 
+Client methods use standard class receiver binding. Call them on the client instance, or bind them when passing them as callbacks, for example `client.getQuote.bind(client)`.
+
 Every endpoint receives `X-MBX-APIKEY`. `TRADE` and `USER_DATA` requests receive a fresh timestamp and HMAC signature. `MARKET_DATA` and `USER_STREAM` requests are unsigned. Signed calls accept a per-call `recvWindow`: a safe integer from 1 to 60000 milliseconds, default 5000.
 
 ## Existing market methods

@@ -2,7 +2,7 @@ import { publicOptions, decimalValue } from '../utilities/publicInputs.js'
 import { fundingWallet } from '../utilities/endpointAsserts.js'
 
 /** Read USDC funding balances; amount includes both free and locked funds. */
-export async function getFundingWallet(main, options = {}) {
+export const getFundingWallet = async (main, options = {}) => {
   const payload = { ...publicOptions(options, ['recvWindow']), asset: 'USDC' }
   fundingWallet(payload)
   const response = await main.apiClient('fundingWallet', payload)

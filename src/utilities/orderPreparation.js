@@ -6,7 +6,7 @@ export const placementFields = [
 ]
 
 /** Build a Binance payload with public defaults and decimal strings. */
-export function placementPayload(params) {
+export const placementPayload = (params) => {
   const payload = publicOptions(params, [...placementFields, 'orderType', 'price', 'quantity', 'notional', 'tradingSession'])
   payload.symbol = normalizeSymbol(payload.symbol)
   payload.side ??= 'BUY'
@@ -29,7 +29,7 @@ export function placementPayload(params) {
 }
 
 /** Fetch and validate one fresh rule snapshot for a logical placement. */
-export async function loadOrderRules(main, symbol) {
+export const loadOrderRules = async (main, symbol) => {
   const rules = await main.getSymbolInfo(symbol)
   if (!rules || rules.symbol !== symbol || !['BUY_SELL', 'BUY', 'SELL', 'NONE'].includes(rules.tradability)) {
     throw new TypeError(`Missing or malformed symbol rules for ${symbol}`)
@@ -47,7 +47,7 @@ export async function loadOrderRules(main, symbol) {
 }
 
 /** Reject sizes and sessions that violate the fetched symbol rules. */
-export function validateOrderRules(payload, rules, estimatedNotional) {
+export const validateOrderRules = (payload, rules, estimatedNotional) => {
   if (rules.tradability !== 'BUY_SELL' && rules.tradability !== payload.side) {
     throw new RangeError(`${payload.symbol} does not allow ${payload.side} orders`)
   }
@@ -76,7 +76,7 @@ export function validateOrderRules(payload, rules, estimatedNotional) {
 }
 
 /** Check the opposing quote with exact decimals; this cannot guarantee a resting order. */
-async function assertNonMarketable(main, payload) {
+const assertNonMarketable = async (main, payload) => {
   const quote = await main.getQuote(payload.symbol)
   if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== payload.symbol) {
     throw new TypeError('quote.symbol does not match the order symbol')
@@ -91,7 +91,7 @@ async function assertNonMarketable(main, payload) {
 }
 
 /** Validate, optionally check marketability, and submit once with a reconciliation ID. */
-export async function submitOrder(main, payload, rules, { estimatedNotional, rejectMarketable = false } = {}) {
+export const submitOrder = async (main, payload, rules, { estimatedNotional, rejectMarketable = false } = {}) => {
   endpointAsserts.placeOrder(payload)
   validateOrderRules(payload, rules, estimatedNotional)
   if (rejectMarketable) await assertNonMarketable(main, payload)

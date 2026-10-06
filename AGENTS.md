@@ -30,6 +30,7 @@
 ## Before Coding
 - Rewrite code directly to the new signature, update all call sites, and never add backward-compatibility or legacy support.
 - Make surgical, minimal edits whenever a change can be done that way, touching only the lines that need to change and avoiding rewrites of unrelated code.
+- Prefer modern es6 optimized JS code with modern arrow functions.
 
 ## After Coding
 - Update the `README.md` treating it as the public API contract.

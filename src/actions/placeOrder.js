@@ -2,7 +2,7 @@ import { placeOrder as assertOrder } from '../utilities/endpointAsserts.js'
 import { placementPayload, loadOrderRules, submitOrder } from '../utilities/orderPreparation.js'
 
 /** Place an explicit Binance order without resizing the caller's quantity. */
-export async function placeOrder(main, params) {
+export const placeOrder = async (main, params) => {
   const payload = placementPayload(params)
   assertOrder(payload)
   const rules = await loadOrderRules(main, payload.symbol)

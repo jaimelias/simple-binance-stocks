@@ -3,7 +3,7 @@ import { placeOrder as assertOrder } from '../utilities/endpointAsserts.js'
 import { placementFields, placementPayload, loadOrderRules, submitOrder } from '../utilities/orderPreparation.js'
 
 /** Size a LIMIT order, optionally rejecting prices marketable against the latest quote. */
-export async function createLimitOrder(main, options) {
+export const createLimitOrder = async (main, options) => {
   const { amountInUSD, entryPrice, rejectMarketable = false, ...params } = publicOptions(options,
     [...placementFields, 'amountInUSD', 'entryPrice', 'tradingSession', 'rejectMarketable'])
   if (typeof rejectMarketable !== 'boolean') throw new TypeError('rejectMarketable must be a boolean')

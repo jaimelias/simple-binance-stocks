@@ -3,7 +3,7 @@ import { publicOptions, normalizeSymbol, decimalValue } from '../utilities/publi
 import { tradeHistory } from '../utilities/endpointAsserts.js'
 
 /** Compare complete JSON rows independently of object property order. */
-function canonicalRow(value) {
+const canonicalRow = (value) => {
   if (Array.isArray(value)) return `[${value.map(canonicalRow).join(',')}]`
   if (value !== null && typeof value === 'object') {
     return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalRow(value[key])}`).join(',')}}`
@@ -12,7 +12,7 @@ function canonicalRow(value) {
 }
 
 /** Aggregate a complete fixed-window fill history into a nonnegative holding estimate. */
-export async function getEquityWallet(main, options = {}) {
+export const getEquityWallet = async (main, options = {}) => {
   const input = publicOptions(options, ['startTime', 'endTime', 'recvWindow'])
   const window = { startTime: 0, ...input }
   if (window.endTime === undefined) window.endTime = Date.now()

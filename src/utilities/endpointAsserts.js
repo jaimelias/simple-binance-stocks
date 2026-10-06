@@ -79,19 +79,19 @@ const timeRange = (endpoint, payload) => {
   return payload
 }
 
-export function exchangeInfo(payload = {}) {
+export const exchangeInfo = (payload = {}) => {
   return validate('exchangeInfo', payload, { symbol: string })
 }
 
-export function tokenizedAssets(payload = {}) {
+export const tokenizedAssets = (payload = {}) => {
   return validate('tokenizedAssets', payload)
 }
 
-export function quote(payload = {}) {
+export const quote = (payload = {}) => {
   return validate('quote', payload, { symbol: string }, ['symbol'])
 }
 
-export function placeOrder(payload = {}) {
+export const placeOrder = (payload = {}) => {
   validate('placeOrder', payload, {
     symbol: string,
     quoteAsset: oneOf('USDC'),
@@ -132,19 +132,19 @@ export function placeOrder(payload = {}) {
   return payload
 }
 
-export function cancelOrder(payload = {}) {
+export const cancelOrder = (payload = {}) => {
   return validate('cancelOrder', payload, { orderId: string }, ['orderId'])
 }
 
-export function cancelAllOrders(payload = {}) {
+export const cancelAllOrders = (payload = {}) => {
   return validate('cancelAllOrders', payload)
 }
 
-export function openOrders(payload = {}) {
+export const openOrders = (payload = {}) => {
   return validate('openOrders', payload)
 }
 
-export function orderHistory(payload = {}) {
+export const orderHistory = (payload = {}) => {
   validate('orderHistory', payload, {
     ...historyFields,
     symbol: string,
@@ -158,14 +158,14 @@ export function orderHistory(payload = {}) {
   return timeRange('orderHistory', payload)
 }
 
-export function orderDetail(payload = {}) {
+export const orderDetail = (payload = {}) => {
   validate('orderDetail', payload, { orderId: string, clientOrderId: string })
   assert(payload.orderId !== undefined || payload.clientOrderId !== undefined,
     'orderDetail: orderId or clientOrderId is required')
   return payload
 }
 
-export function tradeHistory(payload = {}) {
+export const tradeHistory = (payload = {}) => {
   validate('tradeHistory', payload, {
     ...historyFields,
     symbol: string,
@@ -175,7 +175,7 @@ export function tradeHistory(payload = {}) {
   return timeRange('tradeHistory', payload)
 }
 
-export function mint(payload = {}) {
+export const mint = (payload = {}) => {
   return validate('mint', payload, {
     underlyingAsset: string,
     underlyingAssetAmount: decimal,
@@ -183,7 +183,7 @@ export function mint(payload = {}) {
   }, ['underlyingAsset', 'underlyingAssetAmount'])
 }
 
-export function redeem(payload = {}) {
+export const redeem = (payload = {}) => {
   return validate('redeem', payload, {
     tokenizedAsset: string,
     tokenizedAssetAmount: decimal,
@@ -191,14 +191,14 @@ export function redeem(payload = {}) {
   }, ['tokenizedAsset', 'tokenizedAssetAmount'])
 }
 
-export function conversionStatus(payload = {}) {
+export const conversionStatus = (payload = {}) => {
   return validate('conversionStatus', payload, {
     issuerRequestId: string,
     convertType: oneOf('MINT', 'REDEEM')
   }, ['issuerRequestId', 'convertType'])
 }
 
-export function conversionHistory(payload = {}) {
+export const conversionHistory = (payload = {}) => {
   validate('conversionHistory', payload, {
     startTime: integer(),
     endTime: integer(),
@@ -208,16 +208,16 @@ export function conversionHistory(payload = {}) {
   return timeRange('conversionHistory', payload)
 }
 
-export function disclaimer(payload = {}) {
+export const disclaimer = (payload = {}) => {
   return validate('disclaimer', payload)
 }
 
-export function listenKey(payload = {}) {
+export const listenKey = (payload = {}) => {
   return validate('listenKey', payload)
 }
 
 // Not in the Stocks schema; source: Binance Wallet REST API, Asset / Funding Wallet.
 // https://developers.binance.com/en/docs/catalog/core-trading-wallet/api/rest-api/asset#funding-wallet
-export function fundingWallet(payload = {}) {
+export const fundingWallet = (payload = {}) => {
   return validate('fundingWallet', payload, { asset: string, needBtcValuation: boolean })
 }
