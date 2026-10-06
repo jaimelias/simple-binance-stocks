@@ -107,6 +107,9 @@ export function placeOrder(payload = {}) {
     tokenize: boolean
   }, ['symbol', 'side', 'orderType'])
 
+  assert(payload.side !== 'SELL' || payload.walletType !== 'MAIN',
+    'placeOrder: SELL orders settle to CARD; walletType MAIN is not allowed')
+
   if (payload.orderType === 'LIMIT') {
     for (const field of ['price', 'quantity', 'tradingSession']) {
       assert(payload[field] !== undefined, `placeOrder.${field} is required for LIMIT orders`)

@@ -32,7 +32,7 @@
 - Make surgical, minimal edits whenever a change can be done that way, touching only the lines that need to change and avoiding rewrites of unrelated code.
 
 ## After Coding
-- Use the project `README.md` as the public API contract, updating this files if required.
+- Update the `README.md` treating it as the public API contract.
 
 ## References
 

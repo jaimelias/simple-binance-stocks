@@ -13,7 +13,7 @@ const statusTextMap = {
 };
 
 /**
- * Executes a Binance REST request using Google Apps Script UrlFetchApp.
+ * Executes a Binance REST request; only TRADE/USER_DATA receive a signature.
  *
  * @param {Object} main Binance API configuration.
  * @param {Object} endpoint Endpoint configuration.
@@ -27,17 +27,20 @@ export const gasFetch = (main, endpoint, payload = {}) => {
     method,
     security,
     allowEmpty,
-    validateResponse,
-    readOnly
+    validateResponse
   } = endpoint;
 
   let url = `${main.baseUrl}${path}`;
 
-  const params = {
-    ...payload,
-    timestamp: Date.now(),
-    recvWindow: 5000
-  };
+  const signed = security === 'TRADE' || security === 'USER_DATA';
+  const params = { ...payload };
+  if (signed) {
+    params.timestamp = Date.now();
+    params.recvWindow = payload.recvWindow ?? 5000;
+  } else {
+    delete params.timestamp;
+    delete params.recvWindow;
+  }
 
 
   const headers = {
@@ -52,7 +55,9 @@ export const gasFetch = (main, endpoint, payload = {}) => {
     ))
     .join('&');
 
-  const requestData = `${queryString}&signature=${getSignature(queryString, main.API_SECRET)}`
+  const requestData = signed
+    ? `${queryString}&signature=${getSignature(queryString, main.API_SECRET)}`
+    : queryString;
 
   const options = {
     method: method.toLowerCase(),
