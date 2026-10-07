@@ -54,7 +54,7 @@ All placement methods accept these common options:
 | `clientOrderId` | Optional string matching `/^[A-Za-z0-9_-]{32,36}$/`. When omitted, the client generates one UUID for the submission. |
 | `recvWindow` | Optional signed-request window in milliseconds. |
 
-Options must be plain objects. Unsupported fields are rejected; fields with `undefined` values are treated as omitted. Enumerations are case sensitive. Prices, quantities, and notionals accept positive plain decimal strings or finite positive numbers, and numbers are converted to their JavaScript decimal representation. Decimal strings are preferred when preserving input precision matters. LIMIT prices must have at most two decimal places, including trailing decimal zeros in a string; prices are never rounded.
+Options must be plain objects. Unsupported fields are rejected; fields with `undefined` values are treated as omitted. Explicit `null` values for `side`, `timeInForce`, and `quoteAsset` are rejected in both Node.js and GAS. Enumerations are case sensitive. Prices, quantities, and notionals accept positive plain decimal strings or finite positive numbers, and numbers are converted to their JavaScript decimal representation. Decimal strings are preferred when preserving input precision matters. LIMIT prices must have at most two decimal places, including trailing decimal zeros in a string; prices are never rounded.
 
 ### Monetary convenience methods
 

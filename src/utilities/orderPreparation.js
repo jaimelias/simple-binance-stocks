@@ -9,9 +9,9 @@ export const placementFields = [
 export const placementPayload = (params) => {
   const payload = publicOptions(params, [...placementFields, 'orderType', 'price', 'quantity', 'notional', 'tradingSession'])
   payload.symbol = normalizeSymbol(payload.symbol)
-  payload.side ??= 'BUY'
-  payload.timeInForce ??= 'DAY'
-  payload.quoteAsset ??= 'USDC'
+  if (payload.side == null) payload.side = 'BUY'
+  if (payload.timeInForce == null) payload.timeInForce = 'DAY'
+  if (payload.quoteAsset == null) payload.quoteAsset = 'USDC'
   // Explicit nulls are invalid inputs, not omitted defaults.
   for (const field of ['side', 'timeInForce', 'quoteAsset']) {
     if (params[field] === null) throw new TypeError(`${field} cannot be null`)

@@ -1,6 +1,6 @@
 {
   "name": "simple-binance-stocks",
-  "version": "0.1.1",
+  "version": "2.0.0",
   "description": "USDC-based Binance Stocks REST library for Node.js and Google Apps Script",
   "type": "module",
   "main": "./src/BinanceStocksNode.js",
