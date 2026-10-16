@@ -1,4 +1,4 @@
-import { publicOptions, orderAmount, decimalValue } from '../utilities/publicInputs.js'
+import { publicOptions, orderAmount, decimalValue, normalizeSymbol } from '../utilities/publicInputs.js'
 import { placeOrder as assertOrder } from '../utilities/endpointAsserts.js'
 import { placementFields, placementPayload, loadOrderRules, submitOrder } from '../utilities/orderPreparation.js'
 
@@ -13,6 +13,9 @@ export const createMarketOrder = async (main, options) => {
   let estimatedNotional
   if (payload.side === 'SELL') {
     const quote = await main.getQuote(payload.symbol)
+    if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== payload.symbol) {
+      throw new TypeError('quote.symbol does not match the order symbol')
+    }
     const bid = decimalValue(quote?.bidPrice, 'quote.bidPrice')
     const quantity = amount.divToInt(bid.times(rules.stepSize)).times(rules.stepSize)
     payload.quantity = quantity.toString()

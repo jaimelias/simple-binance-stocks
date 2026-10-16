@@ -34,7 +34,7 @@ export const gasFetch = (main, endpoint, payload = {}) => {
 
   const signed = security === 'TRADE' || security === 'USER_DATA';
   const params = { ...payload };
-  if (signed) {
+  if (signed || security === 'USER_STREAM') {
     params.timestamp = Date.now();
     params.recvWindow = payload.recvWindow ?? 5000;
   } else {

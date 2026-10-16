@@ -25,7 +25,7 @@ For GAS, run `npm run build` and load the generated `dist/BinanceStocksGas.min.j
 
 Client methods use standard class receiver binding. Call them on the client instance, or bind them when passing them as callbacks, for example `client.getQuote.bind(client)`.
 
-Every endpoint receives `X-MBX-APIKEY`. `TRADE` and `USER_DATA` requests receive a fresh timestamp and HMAC signature. `MARKET_DATA` and `USER_STREAM` requests are unsigned. Signed calls accept a per-call `recvWindow`: a safe integer from 1 to 60000 milliseconds, default 5000.
+Every endpoint receives `X-MBX-APIKEY`. `TRADE` and `USER_DATA` requests receive a fresh timestamp and HMAC signature. `USER_STREAM` requests receive a fresh timestamp without a signature. Signed and `USER_STREAM` calls accept a per-call `recvWindow`: a safe integer from 1 to 60000 milliseconds, default 5000. `MARKET_DATA` requests omit the timestamp, receive window, and signature.
 
 ## Existing market methods
 
@@ -33,15 +33,28 @@ Every endpoint receives `X-MBX-APIKEY`. `TRADE` and `USER_DATA` requests receive
 | --- | --- |
 | `getQuote(symbol)` | Promise of the raw quote response, or `null` for a successful empty response. Quotes include `bidPrice` and `askPrice` decimal strings when available. |
 | `getSymbolInfo(symbol)` | Promise of the matching exchange-info rule object, or `undefined` if absent. Fetches fresh exchange info on every call; matching is case sensitive. |
-| `getNyMarketSession()` | Synchronous market-session helper with top-level booleans `isDST` (New York observes daylight saving time, UTC−4) and `isHoliday` (an observed recurring full-day NYSE holiday). Weekends and holidays are skipped. Early-close hours and ad-hoc closures are not modeled, and this helper does not authorize an order. |
+| `getNyMarketSession()` | Synchronous session object for now; contract below. |
 
-The standalone `getNyMarketSession(date)` utility evaluates `isDST` at the supplied `Date` (defaults to now), including weekends and the exact DST transition instant. It describes that instant, independently of the `last` and `next` session occurrences.
+The standalone `getNyMarketSession(date = new Date())` evaluates a supplied `Date`. Calendar flags and session hours use `America/New_York`.
 
-`isHoliday` uses the supplied instant's **New York calendar date**. It covers New Year's Day, MLK Day, Presidents' Day, Good Friday, Memorial Day, Juneteenth, Independence Day, Labor Day, Thanksgiving, and Christmas. The calendar logic is contained in `src/utilities/getNyMarketSession.js`. Observed weekday dates carry the holiday flag; weekends and early-close days return `false`. In particular, a Saturday New Year's Day does not close the preceding Friday. The recurring rules follow the [NYSE calendar](https://www.nyse.com/trade/hours-calendars).
+| Output | Contract |
+| --- | --- |
+| `session` | `'pre-market'`, `'regular-market'`, `'post-market'`, or `'closed'`. |
+| `isDST` | Boolean: New York is UTC−4 at the evaluated instant. |
+| `isHoliday` | Boolean: observed recurring full-day NYSE holiday; false on weekends. |
+| `isWeekday`, `isWeekend` | Complementary booleans: Monday–Friday / Saturday–Sunday, independent of holidays. |
+| `market`, `preMarket`, `regularMarket`, `postMarket` | `{ isOpen, last, next }` windows: 04:00–20:00, 04:00–09:30, 09:30–16:00, 16:00–20:00 respectively. |
+| `HOUR_IN_S`, `HOUR_IN_MS`, `DAY_IN_S`, `DAY_IN_MS` | Numbers: `3600`, `3600000`, `86400`, `86400000` respectively. |
 
-On a holiday, `session` is `'closed'` and all four windows (`market`, `regularMarket`, `preMarket`, `postMarket`) have `isOpen: false`. Each window's `last` and `next` skip weekends and holidays: `last` is the most recent occurrence that has opened, and `next` is the next occurrence whose opening is strictly after the supplied instant. `isWeekday` and `isWeekend` retain their calendar meanings, so a Monday holiday still has `isWeekday: true`.
+Each window's `isOpen` is boolean: opening inclusive, closing exclusive. `last` is its most recently opened occurrence; `next` opens strictly after the evaluated instant. Both skip weekends and holidays and contain:
 
-The calendar supports the rolling window from yesterday through the next 365 New York calendar days. Complete years are calculated and cached on demand, allowing `last` and `next` to extend beyond that window across year boundaries and DST changes. This is a modern calendar, not a complete historical archive. There are no network calls or automatic calendar updates. Ad-hoc closures are not modeled.
+| Field | Contract |
+| --- | --- |
+| `opensAt`, `closesAt` | Numeric Unix timestamps in milliseconds. |
+| `timeToOpen` | Milliseconds until opening for `next`; always `0` for `last`. |
+| `openHour`, `openMinute` | Numeric UTC opening hour and minute for that occurrence, accounting for DST. |
+
+Weekends and holidays return `'closed'` with every `isOpen: false`. Uses modern recurring NYSE holidays; excludes early closes and ad-hoc closures. No network calls or order authorization.
 
 These methods retain their existing signatures. The new methods trim and uppercase ticker inputs; existing market methods retain their original symbol handling.
 
@@ -91,7 +104,7 @@ const ack = await client.createLimitOrder({
 
 `createMarketOrder({ symbol, amountInUSD, ...commonOptions })`
 
-A BUY sends `amountInUSD` as decimal-string `notional`, with no quote lookup or derived quantity. A SELL fetches one current quote and sizes down using its valid positive `bidPrice` and the symbol step size. Missing or invalid bids reject SELL sizing. The method rejects `price`, `entryPrice`, `tradingSession`, `quantity`, `notional`, and GTC. Market requests have no session field; session-specific fractional acceptance is left to Binance.
+A BUY sends `amountInUSD` as decimal-string `notional`, with no quote lookup or derived quantity. A SELL fetches one current quote and sizes down using its valid positive `bidPrice` and the symbol step size. Missing or invalid bids reject SELL sizing. When present, `quote.symbol` must be a nonempty string matching the order symbol after trimming and uppercasing; invalid or mismatched symbols reject before submission. The method rejects `price`, `entryPrice`, `tradingSession`, `quantity`, `notional`, and GTC. Market requests have no session field; session-specific fractional acceptance is left to Binance.
 
 ```js
 const ack = await client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100 })
@@ -186,7 +199,7 @@ The request field is `current`; the response field is `page`. Both methods retur
 
 `getEquityWallet({ startTime = 0, endTime = Date.now(), recvWindow } = {})`
 
-Fetches all sequential trade-history pages with `size: 100`, without symbol or side filters. The end time is captured once. Pagination metadata must match the requested page and size and a stable total; incomplete, repeated, nonadvancing, inconsistent, malformed, or failed pages reject the operation rather than return a partial estimate. Identical complete rows are deduplicated by `executionId`; conflicting rows sharing an ID are rejected. BUY and SELL totals are aggregated exactly before subtraction. Zero final holdings are omitted.
+Fetches all sequential trade-history pages with `size: 100`, without symbol or side filters. The end time is captured once. Pagination metadata must match the requested page and size and a stable total; incomplete, repeated, nonadvancing, inconsistent, malformed, or failed pages reject the operation rather than return a partial estimate. Identical complete rows are deduplicated by `executionId`; conflicting rows sharing an ID are rejected. The final distinct execution count must equal the reported total, so duplicate rows cannot conceal missing fills. BUY and SELL totals are aggregated exactly before subtraction. Zero final holdings are omitted.
 
 ```js
 const equity = await client.getEquityWallet()
@@ -219,7 +232,7 @@ const portfolio = await client.getPortfolio()
 // }
 ```
 
-A successful quote response with no valid positive bid leaves that position's `amount` intact and sets its `quote` and `usd` to `null`. It also sets `positionsUsd`, `totalUsd`, and every weight to `null`, preserving cash and other available position values. A rejected quote request rejects the report. Cash is always included; an empty portfolio has zero totals and null weights, while positive cash alone has weight 1. Reads occur sequentially and are not an atomic account snapshot.
+A successful quote response with no valid positive bid leaves that position's `amount` intact and sets its `quote` and `usd` to `null`. A present `quote.symbol` that is invalid or does not match the position symbol after trimming and uppercasing has the same effect. It also sets `positionsUsd`, `totalUsd`, and every weight to `null`, preserving cash and other available position values. A rejected quote request rejects the report. Cash is always included; an empty portfolio has zero totals and null weights, while positive cash alone has weight 1. Reads occur sequentially and are not an atomic account snapshot.
 
 ## Verification and build
 

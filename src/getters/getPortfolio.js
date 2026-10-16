@@ -1,5 +1,5 @@
 import Decimal from '../utilities/decimal.js'
-import { publicOptions, decimalValue, reportNumber } from '../utilities/publicInputs.js'
+import { publicOptions, decimalValue, reportNumber, normalizeSymbol } from '../utilities/publicInputs.js'
 import { tradeHistory } from '../utilities/endpointAsserts.js'
 
 /** Round a value's weight to four decimal places with exact half-up ties. */
@@ -34,6 +34,9 @@ export const getPortfolio = async (main, options = {}) => {
     const quote = await main.getQuote(symbol)
     let bid
     try {
+      if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== symbol) {
+        throw new TypeError('quote.symbol does not match the position symbol')
+      }
       bid = decimalValue(quote?.bidPrice, 'quote.bidPrice')
     } catch {
       complete = false

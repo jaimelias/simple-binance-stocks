@@ -473,9 +473,12 @@ for (const Client of [NodeClient, GasClient]) {
     await client.getOpenOrders({ recvWindow: 60000 })
     await client.cancelAllOrders()
     for (const call of calls) assert.equal(call.headers['X-MBX-APIKEY'], 'dummy-key')
-    for (const call of calls.slice(0, 3)) {
+    for (const call of calls.slice(0, 2)) {
       for (const field of ['timestamp', 'recvWindow', 'signature']) assert.equal(call.payload[field], undefined)
     }
+    assert.ok(Number.isSafeInteger(Number(calls[2].payload.timestamp)))
+    assert.equal(calls[2].payload.recvWindow, '5000')
+    assert.equal(calls[2].payload.signature, undefined)
     assert.equal(calls[3].payload.recvWindow, '60000')
     assert.equal(calls[4].payload.recvWindow, '5000')
     for (const call of calls.slice(3)) {
@@ -484,25 +487,51 @@ for (const Client of [NodeClient, GasClient]) {
       const encoded = Object.entries(params).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&')
       assert.equal(signature, createHmac('sha256', 'dummy-secret').update(encoded).digest('hex'))
     }
+    const before = Date.now()
+    await client.apiClient('listenKey', { timestamp: 1, recvWindow: 60000 })
+    const stream = calls.at(-1)
+    assert.ok(Number(stream.payload.timestamp) >= before && Number(stream.payload.timestamp) <= Date.now())
+    assert.equal(stream.payload.recvWindow, '60000')
+    assert.equal(stream.payload.signature, undefined)
     for (const recvWindow of [0, 60001, 1.5, '5000', null, Number.MAX_SAFE_INTEGER + 1]) {
       await assert.rejects(client.getOpenOrders({ recvWindow }), /recvWindow/)
+      await assert.rejects(client.apiClient('listenKey', { recvWindow }), /recvWindow/)
     }
     const count = calls.length
     await assert.rejects(client.apiClient('openOrders', { recvWindow: -1 }))
     assert.equal(calls.length, count)
   })
 
-  check('wallet scans fixed sequential pages, deduplicates fills and tolerates sell-first traversal', async ({ client, calls, state }) => {
+  check('wallet scans complete fixed sequential pages and tolerates sell-first traversal', async ({ client, calls, state }) => {
     const rows = Array.from({ length: 100 }, (_, i) => fill(i))
     rows[0] = fill(0, { side: 'SELL', qty: '2' })
     rows[1] = fill(1, { qty: '3' })
     state.handler = call => call.path.endsWith('/trade/history')
-      ? page(call.payload.current === '1' ? rows : [rows[0], fill(100, { qty: '0.02' })], Number(call.payload.current), 102)
+      ? page(call.payload.current === '1' ? rows : [fill(100, { qty: '0.02' })], Number(call.payload.current), 101)
       : undefined
     assert.deepEqual(await client.getEquityWallet({ startTime: 0, endTime: 100, recvWindow: 10000 }), { AAPL: { amount: '2' } })
     assert.deepEqual(calls.map(call => call.payload.current), ['1', '2'])
     assert.ok(calls.every(call => call.payload.endTime === '100' && call.payload.recvWindow === '10000' && call.payload.size === '100'))
     assert.ok(calls.every(call => call.payload.side === undefined && call.payload.symbol === undefined))
+  })
+
+  check('duplicate fills cannot hide incomplete history from wallet, portfolio or sellPositions', async ({ client, calls, state }) => {
+    const rows = Array.from({ length: 100 }, (_, i) => fill(i, { qty: '1' }))
+    const overlappingPage = [rows[99], fill(100, { qty: '1' })]
+    for (const paginated of [false, true]) {
+      state.handler = call => call.path.endsWith('/trade/history')
+        ? paginated
+          ? page(call.payload.current === '1' ? rows : overlappingPage, Number(call.payload.current), 102)
+          : page([rows[0], rows[0]])
+        : undefined
+      for (const [method, input] of [['getEquityWallet'], ['getPortfolio'], ['sellPositions', null]]) {
+        const before = calls.length
+        await assert.rejects(client[method](input), /distinct execution count/)
+        const requests = calls.slice(before)
+        assert.equal(requests.length, paginated ? 2 : 1)
+        assert.ok(requests.every(call => call.path.endsWith('/trade/history')))
+      }
+    }
   })
 
   check('wallet rejects incomplete, repeated, conflicting or malformed histories', async ({ client, state }) => {
@@ -593,6 +622,30 @@ for (const Client of [NodeClient, GasClient]) {
     await assert.rejects(client.getPortfolio(), /503/)
     state.handler = call => call.path.endsWith('/quote') ? { bidPrice: '1' + '0'.repeat(310) } : undefined
     await assert.rejects(client.getPortfolio(), /representable numeric range/)
+  })
+
+  check('mismatched quote symbols block market SELLs and leave portfolio positions unpriced', async ({ client, state, calls }) => {
+    state.trades = page([fill(0, { qty: '1' }), fill(1, { symbol: 'MSFT', qty: '2' })])
+    state.funding = [{ asset: 'USDC', free: '10', locked: '0', freeze: '0', withdrawing: '0' }]
+    for (const symbol of ['MSFT', '', null, 123]) {
+      state.handler = call => call.path.endsWith('/quote') && call.payload.symbol === 'AAPL'
+        ? { symbol, bidPrice: '10' } : undefined
+      await assert.rejects(client.createMarketOrder({ symbol: 'AAPL', side: 'SELL', amountInUSD: 100 }), /symbol/)
+      const report = await client.getPortfolio()
+      assert.deepEqual(report.totals, { totalUsd: null, positionsUsd: null, cashUsd: 10 })
+      assert.deepEqual(report.positions.AAPL, { amount: 1, quote: null, usd: null, weight: null })
+      assert.deepEqual(report.positions.MSFT, { amount: 2, quote: 3, usd: 6, weight: null })
+      assert.equal(report.cash.USDC.weight, null)
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
+    state.handler = call => call.path.endsWith('/quote') && call.payload.symbol === 'AAPL'
+      ? { symbol: ' aapl ', bidPrice: '10' } : undefined
+    assert.deepEqual((await client.getPortfolio()).totals, { totalUsd: 26, positionsUsd: 16, cashUsd: 10 })
+    await client.createMarketOrder({ symbol: 'AAPL', side: 'SELL', amountInUSD: 100 })
+    const orders = calls.filter(call => call.path.endsWith('/place'))
+    assert.equal(orders.length, 1)
+    assert.equal(orders[0].payload.symbol, 'AAPL')
+    assert.equal(orders[0].payload.quantity, '10')
   })
 
   check('existing quote and symbol APIs retain successful empty/raw behavior', async ({ client, state }) => {

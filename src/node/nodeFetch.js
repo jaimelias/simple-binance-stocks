@@ -2,7 +2,8 @@ import { getSignature } from './nodeCrypto.js';
 
 /**
  * Executes a Binance REST request using the Node.js Fetch API.
- * All endpoints receive the API key; TRADE/USER_DATA also receive a timestamp and signature.
+ * All endpoints receive the API key; TRADE/USER_DATA/USER_STREAM receive a timestamp.
+ * Only TRADE/USER_DATA receive a signature.
  *
  * @param {Object} main Binance API configuration.
  * @param {Object} endpoint Endpoint configuration.
@@ -23,7 +24,7 @@ export const nodeFetch = async (main, endpoint, payload = {}) => {
 
     const signed = security === 'TRADE' || security === 'USER_DATA';
     const params = { ...payload };
-    if (signed) {
+    if (signed || security === 'USER_STREAM') {
         params.timestamp = Date.now();
         params.recvWindow = payload.recvWindow ?? 5000;
     } else {

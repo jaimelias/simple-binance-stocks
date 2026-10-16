@@ -56,6 +56,9 @@ export const getEquityWallet = async (main, options = {}) => {
     consumed += page.rows.length
     if (consumed === expectedTotal) break
   }
+  if (executions.size !== expectedTotal) {
+    throw new Error('Incomplete trade history: distinct execution count does not match total')
+  }
   const wallet = {}
   for (const [symbol, balance] of totals) {
     if (balance.SELL.gt(balance.BUY)) {
