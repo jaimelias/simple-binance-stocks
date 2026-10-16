@@ -76,11 +76,7 @@ export const validateOrderRules = (payload, rules, estimatedNotional) => {
 }
 
 /** Check the opposing quote with exact decimals; this cannot guarantee a resting order. */
-const assertNonMarketable = async (main, payload) => {
-  const quote = await main.getQuote(payload.symbol)
-  if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== payload.symbol) {
-    throw new TypeError('quote.symbol does not match the order symbol')
-  }
+const assertNonMarketable = (payload, quote) => {
   const field = payload.side === 'BUY' ? 'askPrice' : 'bidPrice'
   const reference = decimalValue(quote?.[field], `quote.${field}`)
   const price = decimalValue(payload.price, 'price')
@@ -90,11 +86,29 @@ const assertNonMarketable = async (main, payload) => {
   }
 }
 
-/** Validate, optionally check marketability, and submit once with a reconciliation ID. */
-export const submitOrder = async (main, payload, rules, { estimatedNotional, rejectMarketable = false } = {}) => {
+/** Compare midpoint spread percentages without rounding or division. */
+const assertMaxSpread = (quote, maxSpreadPercent) => {
+  const bid = decimalValue(quote?.bidPrice, 'quote.bidPrice')
+  const ask = decimalValue(quote?.askPrice, 'quote.askPrice')
+  if (ask.lt(bid)) throw new RangeError('quote.askPrice must be greater than or equal to quote.bidPrice')
+  if (ask.minus(bid).times(200).gt(ask.plus(bid).times(maxSpreadPercent))) {
+    throw new RangeError(`maxSpreadPercent: quote spread exceeds ${maxSpreadPercent}%`)
+  }
+}
+
+/** Validate, check optional guards against one quote, and submit once with a reconciliation ID. */
+export const submitOrder = async (main, payload, rules,
+  { estimatedNotional, rejectMarketable = false, maxSpreadPercent, quote } = {}) => {
   endpointAsserts.placeOrder(payload)
   validateOrderRules(payload, rules, estimatedNotional)
-  if (rejectMarketable) await assertNonMarketable(main, payload)
+  if (rejectMarketable || maxSpreadPercent !== undefined) {
+    if (quote === undefined) quote = await main.getQuote(payload.symbol)
+    if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== payload.symbol) {
+      throw new TypeError('quote.symbol does not match the order symbol')
+    }
+    if (maxSpreadPercent !== undefined) assertMaxSpread(quote, maxSpreadPercent)
+    if (rejectMarketable) assertNonMarketable(payload, quote)
+  }
   if (payload.clientOrderId === undefined) payload.clientOrderId = main.createClientOrderId()
   endpointAsserts.placeOrder(payload)
   try {

@@ -1,18 +1,21 @@
-import { publicOptions, orderAmount, decimalValue, normalizeSymbol } from '../utilities/publicInputs.js'
+import { publicOptions, orderAmount, decimalValue, normalizeSymbol, validateMaxSpreadPercent } from '../utilities/publicInputs.js'
 import { placeOrder as assertOrder } from '../utilities/endpointAsserts.js'
 import { placementFields, placementPayload, loadOrderRules, submitOrder } from '../utilities/orderPreparation.js'
 
-/** Buy by notional, or size a market sell down using one current bid quote. */
+/** Buy by notional or size a sell using one bid quote, optionally guarding the spread. */
 export const createMarketOrder = async (main, options) => {
-  const { amountInUSD, ...params } = publicOptions(options, [...placementFields, 'amountInUSD'])
+  const { amountInUSD, maxSpreadPercent, ...params } = publicOptions(options,
+    [...placementFields, 'amountInUSD', 'maxSpreadPercent'])
+  validateMaxSpreadPercent(maxSpreadPercent)
   const amount = orderAmount(amountInUSD)
   const payload = placementPayload({ ...params, orderType: 'MARKET',
     ...(params.side === 'SELL' ? { quantity: '1' } : { notional: amount.toString() }) })
   assertOrder(payload)
   const rules = await loadOrderRules(main, payload.symbol)
   let estimatedNotional
+  let quote
   if (payload.side === 'SELL') {
-    const quote = await main.getQuote(payload.symbol)
+    quote = await main.getQuote(payload.symbol)
     if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== payload.symbol) {
       throw new TypeError('quote.symbol does not match the order symbol')
     }
@@ -21,5 +24,5 @@ export const createMarketOrder = async (main, options) => {
     payload.quantity = quantity.toString()
     estimatedNotional = quantity.times(bid)
   }
-  return submitOrder(main, payload, rules, { estimatedNotional })
+  return submitOrder(main, payload, rules, { estimatedNotional, maxSpreadPercent, quote })
 }

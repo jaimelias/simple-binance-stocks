@@ -16,6 +16,10 @@ const fill = (id, extra = {}) => ({
 const page = (rows, current = 1, total = rows.length) => ({ total, page: current, size: 100, rows })
 const limit = extra => ({ symbol: 'aapl', amountInUSD: 10, entryPrice: '3.00', tradingSession: 'RTH', ...extra })
 const direct = extra => ({ symbol: 'aapl', orderType: 'LIMIT', price: '3', quantity: '1', tradingSession: 'RTH', ...extra })
+const monetaryOrders = ['BUY', 'SELL'].flatMap(side => [
+  ['createLimitOrder', limit({ side })],
+  ['createMarketOrder', { symbol: 'aapl', amountInUSD: 10, side }]
+])
 
 /** Exercise the real adapters using deterministic, offline HTTP and GAS runtime substitutes. */
 const harness = (t, Client) => {
@@ -212,10 +216,139 @@ for (const Client of [NodeClient, GasClient]) {
   check('guarded submission retains its reconciliation ID and does not retry a failed order', async ({ client, calls, state }) => {
     const error = new TypeError('order transport disconnected')
     state.handler = call => { if (call.path.endsWith('/place')) throw error }
-    await assert.rejects(client.createLimitOrder(limit({ rejectMarketable: true })), actual => actual === error)
+    await assert.rejects(client.createLimitOrder(limit({ rejectMarketable: true, maxSpreadPercent: 1 })), actual => actual === error)
     assert.deepEqual(calls.map(call => call.path.split('/').at(-1)), ['exchangeInfo', 'quote', 'place'])
     assert.equal(error.clientOrderId, calls.at(-1).payload.clientOrderId)
     assert.match(error.clientOrderId, /^[a-f0-9-]{36}$/)
+  })
+
+  check('maxSpreadPercent enforces exact midpoint thresholds on both order types and sides', async ({ client, calls, state }) => {
+    const clientOrderId = 'client_1234567890123456789012345678'
+    for (const [method, params] of monetaryOrders) {
+      state.quote = { symbol: ' aapl ', bidPrice: '99.95', askPrice: '100.05' }
+      for (const maxSpreadPercent of [0.1, 0.2]) {
+        const start = calls.length
+        const options = Object.freeze({ ...params, maxSpreadPercent, clientOrderId })
+        assert.deepEqual(await client[method](options), state.placement)
+        assert.deepEqual(calls.slice(start).map(call => call.path.split('/').at(-1)), ['exchangeInfo', 'quote', 'place'])
+        const payload = calls.at(-1).payload
+        assert.equal(payload.clientOrderId, clientOrderId)
+        assert.equal(payload.side, params.side)
+        if (method === 'createLimitOrder') {
+          assert.equal(payload.price, '3.00')
+          assert.equal(payload.quantity, '3.333')
+        } else if (params.side === 'SELL') {
+          assert.equal(payload.quantity, '0.1')
+          assert.equal(payload.notional, undefined)
+        } else {
+          assert.equal(payload.notional, '10')
+          assert.equal(payload.quantity, undefined)
+        }
+      }
+      await assert.rejects(client[method]({ ...params, maxSpreadPercent: 0.0999 }), error =>
+        error instanceof RangeError && /maxSpreadPercent/.test(error.message) && error.clientOrderId === undefined)
+      state.quote.askPrice = '100.050000000000000001'
+      await assert.rejects(client[method]({ ...params, maxSpreadPercent: 0.1 }), /maxSpreadPercent/)
+      state.quote.askPrice = '100.049999999999999999'
+      await client[method]({ ...params, maxSpreadPercent: 0.1 })
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 12)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 20)
+    assert.ok(calls.every(call => call.payload.maxSpreadPercent === undefined))
+  })
+
+  check('maxSpreadPercent zero allows only a zero spread, including sub-number-precision differences', async ({ client, calls, state }) => {
+    for (const [method, params] of monetaryOrders) {
+      state.quote = { bidPrice: '100', askPrice: '100' }
+      await client[method]({ ...params, maxSpreadPercent: 0 })
+      state.quote.askPrice = '100.000000000000000001'
+      await assert.rejects(client[method]({ ...params, maxSpreadPercent: 0 }), /maxSpreadPercent/)
+      await assert.rejects(client[method]({ ...params, maxSpreadPercent: 1e-20 }), /maxSpreadPercent/)
+      await client[method]({ ...params, maxSpreadPercent: 1e-18 })
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 8)
+  })
+
+  check('maxSpreadPercent validates before requests and omission preserves existing quote requirements', async ({ client, calls, state }) => {
+    for (const [method, params] of monetaryOrders) {
+      for (const maxSpreadPercent of [null, '0.1', NaN, Infinity, -Infinity, -1, true, false, {}, []]) {
+        await assert.rejects(client[method]({ ...params, maxSpreadPercent }), /maxSpreadPercent must be a finite nonnegative number/)
+      }
+    }
+    await assert.rejects(client.placeOrder(direct({ maxSpreadPercent: 0.1 })), /maxSpreadPercent is not allowed/)
+    assert.equal(calls.length, 0)
+    for (const extra of [{}, { maxSpreadPercent: undefined }]) {
+      state.quote = null
+      for (const [method, params] of monetaryOrders.filter(([method, params]) => method === 'createLimitOrder' || params.side === 'BUY')) {
+        const start = calls.length
+        await client[method]({ ...params, ...extra })
+        assert.deepEqual(calls.slice(start).map(call => call.path.split('/').at(-1)), ['exchangeInfo', 'place'])
+      }
+      state.quote = { bidPrice: '3' }
+      await client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 10, side: 'SELL', ...extra })
+      assert.equal(calls.at(-1).payload.quantity, '3.333')
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 2)
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 8)
+  })
+
+  check('maxSpreadPercent rejects invalid, crossed and mismatched quotes before generating IDs or submitting', async ({ client, calls, state }) => {
+    let generated = 0
+    client.createClientOrderId = () => { generated++; return randomUUID() }
+    const valid = { bidPrice: '3', askPrice: '3.01' }
+    const invalid = [null, {}, { bidPrice: '4', askPrice: '3' },
+      ...['bidPrice', 'askPrice'].flatMap(field =>
+        [undefined, null, '0', '-1', 'invalid', false, 'Infinity'].map(value => ({ ...valid, [field]: value }))),
+      ...['MSFT', '', null, 123].map(symbol => ({ ...valid, symbol }))]
+    for (const [method, params] of monetaryOrders) {
+      for (const quote of invalid) {
+        state.quote = quote
+        await assert.rejects(client[method]({ ...params, maxSpreadPercent: 1 }))
+      }
+    }
+    assert.equal(generated, 0)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, monetaryOrders.length * invalid.length)
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
+  })
+
+  check('maxSpreadPercent propagates quote failures without retries or submission', async ({ client, calls, state }) => {
+    const error = new TypeError('quote transport disconnected')
+    for (const [method, params] of monetaryOrders) {
+      state.handler = call => call.path.endsWith('/quote') ? { httpStatus: 503, rawBody: 'quote unavailable' } : undefined
+      await assert.rejects(client[method]({ ...params, maxSpreadPercent: 1 }), actual =>
+        /503/.test(actual.message) && actual.clientOrderId === undefined)
+      state.handler = call => { if (call.path.endsWith('/quote')) throw error }
+      await assert.rejects(client[method]({ ...params, maxSpreadPercent: 1 }), actual => actual === error)
+    }
+    assert.equal(error.clientOrderId, undefined)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 8)
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
+  })
+
+  check('LIMIT spread and marketability guards share one quote and each can reject', async ({ client, calls, state }) => {
+    for (const side of ['BUY', 'SELL']) {
+      const options = limit({ side, rejectMarketable: true, maxSpreadPercent: 1 })
+      state.quote = { bidPrice: '2.99', askPrice: '3.01' }
+      await client.createLimitOrder(options)
+      state.quote = { bidPrice: '2', askPrice: '4' }
+      await assert.rejects(client.createLimitOrder(options), /maxSpreadPercent/)
+      state.quote = { bidPrice: '3', askPrice: '3' }
+      await assert.rejects(client.createLimitOrder(options), /rejectMarketable/)
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 6)
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 2)
+    assert.ok(calls.every(call => call.payload.rejectMarketable === undefined && call.payload.maxSpreadPercent === undefined))
+  })
+
+  check('maxSpreadPercent avoids unnecessary quote requests when sizing or rules already reject', async ({ client, calls, state }) => {
+    state.rules.stepSize = '1'
+    await assert.rejects(client.createLimitOrder(limit({ amountInUSD: 1, maxSpreadPercent: 1 })), /quantity/)
+    state.rules = { ...rules(), minNotional: '20' }
+    await assert.rejects(client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 10, maxSpreadPercent: 1 }), /notional/)
+    state.rules = { ...rules(), tradability: 'NONE' }
+    await assert.rejects(client.createLimitOrder(limit({ maxSpreadPercent: 1 })), /does not allow/)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 0)
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
   })
 
   check('market BUY uses notional without a quote; SELL uses one bid and rounds down', async ({ client, calls, state }) => {

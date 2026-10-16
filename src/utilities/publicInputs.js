@@ -44,6 +44,13 @@ export const orderAmount = (value) => {
   return new Decimal(value)
 }
 
+/** Validate the optional spread threshold in percentage points. */
+export const validateMaxSpreadPercent = (value) => {
+  if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
+    throw new TypeError('maxSpreadPercent must be a finite nonnegative number')
+  }
+}
+
 /** Convert a decimal for a report, rejecting overflow and loss of nonzero magnitude. */
 export const reportNumber = (value) => {
   const number = Number(value.toString())
