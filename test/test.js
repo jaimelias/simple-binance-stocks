@@ -20,8 +20,9 @@ const test = async () => {
   const symbol = 'AAPL';
   const quote = await exchange.getQuote(symbol)
   const symbolInfo = await exchange.getSymbolInfo(symbol)
+  const portfolio = await exchange.getPortfolio()
 
-  console.log({quote, symbolInfo})
+  console.dir({quote, symbolInfo, portfolio}, {depth: 5})
 
 }
 

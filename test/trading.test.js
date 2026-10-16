@@ -72,10 +72,10 @@ for (const Client of [NodeClient, GasClient]) {
   const runtime = Client === NodeClient ? 'Node' : 'GAS'
   const check = (name, fn) => test(`${runtime}: ${name}`, async t => fn(harness(t, Client)))
 
-  check('all twelve public methods return Promises and preserve raw endpoint responses', async ({ client, calls }) => {
+  check('all thirteen public methods return Promises and preserve raw endpoint responses', async ({ client, calls }) => {
     const jobs = [
       ['createLimitOrder', limit()], ['createMarketOrder', { symbol: 'AAPL', amountInUSD: 10 }],
-      ['placeOrder', direct()], ['cancelOrder', { orderId: 'order-1' }], ['cancelAllOrders'],
+      ['placeOrder', direct()], ['sellPositions', null], ['cancelOrder', { orderId: 'order-1' }], ['cancelAllOrders'],
       ['getOrder', { orderId: 'order-1', clientOrderId: 'lookup-id' }], ['getOpenOrders'],
       ['getOrderHistory', { startTime: 0, endTime: 1 }], ['getTradeHistory', { startTime: 0, endTime: 1 }],
       ['getEquityWallet'], ['getFundingWallet'], ['getPortfolio']
@@ -87,6 +87,7 @@ for (const Client of [NodeClient, GasClient]) {
       results[method] = await promise
     }
     assert.deepEqual(results.placeOrder, { status: 'S', orderId: 'order-1', extra: null })
+    assert.deepEqual(results.sellPositions, [])
     assert.deepEqual(results.cancelAllOrders, { success: true })
     assert.deepEqual(results.getOpenOrders, [])
     assert.deepEqual(results.getOrder, { qty: '1.000', fee: null, trades: [], extra: 'untouched' })
@@ -326,6 +327,117 @@ for (const Client of [NodeClient, GasClient]) {
     await assert.rejects(client.placeOrder(direct()), error => error instanceof SyntaxError && !!error.clientOrderId)
     state.handler = call => call.path.endsWith('/place') ? { status: 'S' } : undefined
     await assert.rejects(client.placeOrder(direct()), error => /invalid response/.test(error.message) && !!error.clientOrderId)
+  })
+
+  check('sells all wallet positions sequentially with exact full quantities and placement defaults', async ({ client, calls, state }) => {
+    state.trades = page([
+      fill(1, { qty: '1.234567890123456789' }),
+      fill(2, { symbol: 'NVDA', qty: '3' }),
+      fill(3, { symbol: 'NVDA', side: 'SELL', qty: '0.9' }),
+      fill(4, { symbol: 'MSFT', qty: '1' }),
+      fill(5, { symbol: 'MSFT', side: 'SELL', qty: '1' })
+    ])
+    state.handler = call => call.path.endsWith('/exchangeInfo')
+      ? { symbols: ['AAPL', 'NVDA'].map(symbol => ({ ...rules(), symbol, stepSize: '0.000000000000000001' })) }
+      : undefined
+
+    assert.deepEqual(await client.sellPositions(null), [
+      { symbol: 'AAPL', quantity: '1.234567890123456789', ack: state.placement },
+      { symbol: 'NVDA', quantity: '2.1', ack: state.placement }
+    ])
+    assert.deepEqual(calls.map(call => call.path.replace('/sapi/v1/equity/', '')), [
+      'trade/history', 'market/exchangeInfo', 'order/place', 'market/exchangeInfo', 'order/place'
+    ])
+    const orders = calls.filter(call => call.path.endsWith('/place'))
+    for (const { payload } of orders) {
+      assert.equal(payload.side, 'SELL')
+      assert.equal(payload.orderType, 'MARKET')
+      assert.equal(payload.timeInForce, 'DAY')
+      assert.equal(payload.quoteAsset, 'USDC')
+      for (const field of ['price', 'notional', 'tradingSession', 'amountInUSD']) {
+        assert.equal(payload[field], undefined)
+      }
+    }
+    assert.deepEqual(orders.map(call => [call.payload.symbol, call.payload.quantity]), [
+      ['AAPL', '1.234567890123456789'], ['NVDA', '2.1']
+    ])
+    assert.notEqual(orders[0].payload.clientOrderId, orders[1].payload.clientOrderId)
+  })
+
+  check('sells only selected symbols, normalizes duplicates and reports missing positions', async ({ client, calls, state }) => {
+    state.trades = page([fill(1, { qty: '1' }), fill(2, { symbol: 'NVDA', qty: '2' })])
+    state.rules = { ...rules(), symbol: 'NVDA' }
+    const selection = Object.freeze([
+      Object.freeze({ symbol: ' nvda ' }), Object.freeze({ symbol: ' msft ' }), Object.freeze({ symbol: 'NVDA' })
+    ])
+    assert.deepEqual(await client.sellPositions(selection), [
+      { symbol: 'NVDA', quantity: '2', ack: state.placement },
+      { symbol: 'MSFT', skipped: 'NO_POSITION' }
+    ])
+    assert.deepEqual(calls.filter(call => call.path.endsWith('/place')).map(call => call.payload.symbol), ['NVDA'])
+    assert.equal(calls.filter(call => call.path.endsWith('/trade/history')).length, 1)
+    assert.equal(calls[0].payload.symbol, undefined)
+  })
+
+  check('validates the whole position selection before any API calls', async ({ client, calls }) => {
+    await assert.rejects(client.sellPositions(), TypeError)
+    for (const input of [undefined, {}, 'AAPL', false, 0, new Set(['AAPL']), new Array(1)]) {
+      await assert.rejects(client.sellPositions(input), TypeError)
+    }
+    for (const entry of [null, undefined, [], 'AAPL', {}, { symbol: '' }, { symbol: ' ' },
+      { symbol: null }, { symbol: 1 }, { symbol: 'AAPL', quantity: '1' }]) {
+      await assert.rejects(client.sellPositions([{ symbol: 'AAPL' }, entry]), TypeError)
+    }
+    assert.equal(calls.length, 0)
+  })
+
+  check('handles empty selections and wallets without placing orders', async ({ client, calls }) => {
+    assert.deepEqual(await client.sellPositions([]), [])
+    assert.equal(calls.length, 0)
+    assert.deepEqual(await client.sellPositions(null), [])
+    assert.deepEqual(await client.sellPositions([{ symbol: 'AAPL' }]), [{ symbol: 'AAPL', skipped: 'NO_POSITION' }])
+    assert.equal(calls.length, 2)
+    assert.ok(calls.every(call => call.path.endsWith('/trade/history')))
+  })
+
+  check('does not sell partial holdings when a later wallet page fails', async ({ client, calls, state }) => {
+    const rows = Array.from({ length: 100 }, (_, i) => fill(i))
+    state.handler = call => call.payload.current === '1'
+      ? page(rows, 1, 101) : { httpStatus: 500, rawBody: 'history unavailable' }
+    await assert.rejects(client.sellPositions(null), /500/)
+    assert.equal(calls.length, 2)
+    assert.ok(calls.every(call => call.path.endsWith('/trade/history')))
+    assert.equal(calls[0].payload.endTime, calls[1].payload.endTime)
+  })
+
+  check('collects invalid sizes, failed acknowledgements and uncertain writes while continuing once per symbol', async ({ client, calls, state, errors }) => {
+    const symbols = ['AAPL', 'MSFT', 'NVDA', 'VOO']
+    const failure = new TypeError('transport disconnected')
+    const declined = { status: 'F', reason: 'declined', extra: null }
+    state.trades = page(symbols.map((symbol, i) => fill(i, { symbol, qty: i === 0 ? '0.0011' : '2' })))
+    state.handler = call => {
+      if (call.path.endsWith('/exchangeInfo')) return { symbols: symbols.map(symbol => ({ ...rules(), symbol })) }
+      if (call.path.endsWith('/place')) {
+        if (call.payload.symbol === 'MSFT') return declined
+        if (call.payload.symbol === 'NVDA') throw failure
+      }
+    }
+    const results = await client.sellPositions(null)
+    assert.equal(results.length, 4)
+    assert.equal(results[0].symbol, 'AAPL')
+    assert.equal(results[0].quantity, '0.0011')
+    assert.ok(results[0].error instanceof RangeError)
+    assert.match(results[0].error.message, /stepSize/)
+    assert.deepEqual(results[1], { symbol: 'MSFT', quantity: '2', ack: declined })
+    assert.deepEqual(results[2], { symbol: 'NVDA', quantity: '2', error: failure })
+    assert.equal(results[2].error, failure)
+    assert.equal(errors[0], failure)
+    assert.deepEqual(results[3], { symbol: 'VOO', quantity: '2', ack: state.placement })
+    const orders = calls.filter(call => call.path.endsWith('/place'))
+    assert.deepEqual(orders.map(call => call.payload.symbol), ['MSFT', 'NVDA', 'VOO'])
+    assert.equal(failure.clientOrderId, orders[1].payload.clientOrderId)
+    assert.match(failure.clientOrderId, /^[a-f0-9-]{36}$/)
+    assert.ok(calls.every(call => ['history', 'exchangeInfo', 'place'].includes(call.path.split('/').at(-1))))
   })
 
   check('history fetches one requested page with filters and no placement defaults', async ({ client, calls, state }) => {

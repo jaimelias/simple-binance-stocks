@@ -21,7 +21,7 @@ const client = new BinanceStocks({
 
 `baseUrl` defaults to `https://api.binance.com`. `errorLogger` defaults to `console.error` and receives errors from the API adapters before they are rethrown. Keep credentials private. There is no constructor `recvWindow` option.
 
-For GAS, run `npm run build` and load the generated `dist/BinanceStocksGas.min.js` in your Apps Script project. It exposes `BinanceStocks`; instantiate it with the same options, obtaining secrets from your chosen GAS secret storage. Use `await` in an async entry function. All twelve trading, history, wallet, and portfolio methods return Promises in both runtimes. GAS uses `UrlFetchApp` and `Utilities` internally.
+For GAS, run `npm run build` and load the generated `dist/BinanceStocksGas.min.js` in your Apps Script project. It exposes `BinanceStocks`; instantiate it with the same options, obtaining secrets from your chosen GAS secret storage. Use `await` in an async entry function. All thirteen trading, history, wallet, and portfolio methods return Promises in both runtimes. GAS uses `UrlFetchApp` and `Utilities` internally.
 
 Client methods use standard class receiver binding. Call them on the client instance, or bind them when passing them as callbacks, for example `client.getQuote.bind(client)`.
 
@@ -49,7 +49,7 @@ These methods retain their existing signatures. The new methods trim and upperca
 
 `createLimitOrder(options)`, `createMarketOrder(options)`, and `placeOrder(params)` each fetch one fresh symbol-rule snapshot and submit at most once. They return the raw placement acknowledgement, such as `{ status: 'S', orderId, clientOrderId }`. Extra response fields, missing optional fields, and decimal strings are preserved. `{ status: 'F', ... }` is a valid failed acknowledgement and resolves normally. `S` means accepted; it does not prove a fill.
 
-All placement methods accept these common options:
+These three placement methods accept these common options:
 
 | Option | Contract |
 | --- | --- |
@@ -97,7 +97,7 @@ A BUY sends `amountInUSD` as decimal-string `notional`, with no quote lookup or 
 const ack = await client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100 })
 ```
 
-The helpers never send `amountInUSD` or `entryPrice` to Binance. Final spend or proceeds may differ because of rounding, fees, and execution price. The equity-wallet estimate is never used to authorize or resize a SELL.
+The monetary helpers never send `amountInUSD` or `entryPrice` to Binance. Final spend or proceeds may differ because of rounding, fees, and execution price. These helpers do not use the equity wallet to authorize or resize a SELL; `sellPositions` uses it as the source of positions and quantities.
 
 ### Explicit placement
 
@@ -121,6 +121,32 @@ const ack = await client.placeOrder({
 ```
 
 On a placement transport or response error, the propagated Error retains its type/message and gains `clientOrderId`. Use it with `getOrder({ clientOrderId: error.clientOrderId })` to reconcile an uncertain outcome before deciding on another order. There are no automatic retries, replacement IDs, fallback lookups, or polling.
+
+### Selling positions
+
+`sellPositions(null | [{ symbol }])`
+
+Uses one `getEquityWallet()` call with its default history window as the source of truth for positions and quantities. Pass explicit `null` to target every wallet position, or an array of plain `{ symbol }` objects to target only those symbols. Symbols are trimmed, uppercased, and deduplicated in first-occurrence order. Unsupported fields are rejected using the same options rules as other methods. Missing arguments, `undefined`, and malformed entries reject before any API calls. An empty array returns `[]` without API calls.
+
+Each selected position is submitted sequentially through `placeOrder({ symbol, side: 'SELL', orderType: 'MARKET', quantity: position.amount })`. The decimal-string amount is passed unchanged; there is no quote lookup, USD sizing, rounding, or splitting. Existing placement defaults and validations apply, including `USDC`, `DAY`, exact step increments, and quantity bounds. Binance validates the execution notional.
+
+```js
+const results = await client.sellPositions(null)
+```
+
+Or sell only selected positions:
+
+```js
+const results = await client.sellPositions([{ symbol: 'AAPL' }, { symbol: 'NVDA' }])
+```
+
+Returns an array in wallet-key order for `null`, or normalized selection order for an array:
+
+- `{ symbol, quantity, ack }` preserves the raw Binance acknowledgement, including failed acknowledgements with `status: 'F'`. `status: 'S'` means accepted, not filled.
+- `{ symbol, quantity, error }` preserves the original error, including `error.clientOrderId` when available for reconciliation through `getOrder`.
+- `{ symbol, skipped: 'NO_POSITION' }` reports a requested symbol absent from the wallet.
+
+A wallet failure rejects the entire call before any orders are submitted. An empty wallet with `null` returns `[]`. Individual placement failures are collected and processing continues; earlier submissions are not rolled back. There are no automatic retries, cancellations, or fill polling. Reconcile uncertain submissions before submitting another sell for the same position.
 
 ### Detail and cancellation
 

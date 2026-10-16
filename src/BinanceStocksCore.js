@@ -3,6 +3,7 @@ import { getSymbolInfo } from './getters/getSymbolInfo.js'
 import { createLimitOrder } from './actions/createLimitOrder.js'
 import { createMarketOrder } from './actions/createMarketOrder.js'
 import { placeOrder } from './actions/placeOrder.js'
+import { sellPositions } from './actions/sellPositions.js'
 import { cancelOrder } from './actions/cancelOrder.js'
 import { cancelAllOrders } from './actions/cancelAllOrders.js'
 import { getOrder } from './getters/getOrder.js'
@@ -48,6 +49,9 @@ export default class BinanceStocksCore {
 
   /** Validate and submit an explicit Binance order without resizing it. */
   async placeOrder(params) { return placeOrder(this, params) }
+
+  /** Submit MARKET sells for all or selected positions from getEquityWallet. */
+  async sellPositions(positions) { return sellPositions(this, positions) }
 
   /** Request cancellation and return Binance's acknowledgement. */
   async cancelOrder(options) { return cancelOrder(this, options) }
