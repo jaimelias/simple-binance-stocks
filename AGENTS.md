@@ -33,7 +33,7 @@
 - Prefer modern es6 optimized JS code with modern arrow functions.
 
 ## After Coding
-- Update the `README.md` treating it as the public API contract.
+- If required, update the `README.md` treating it as the public API contract.
 
 ## References
 

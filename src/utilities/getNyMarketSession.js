@@ -23,6 +23,8 @@
  * ============================================================================
  */
 
+import { isNyMarketHoliday, getAdjacentNyTradingDate } from './nyMarketCalendar.js'
+
 const NY_MARKET_TIME_ZONE = 'America/New_York'
 const HOUR_IN_S = 3600
 const HOUR_IN_MS = 3600000
@@ -145,17 +147,17 @@ const createMarketOccurrence = (
  * `next` is always the next occurrence whose opensAt is greater than now.
  *
  * @param {number} now Current Unix timestamp in milliseconds.
- * @param {boolean} isWeekday Whether the current NY date is Monday-Friday.
- * @param {number} previousDayStart Previous NY weekday midnight.
- * @param {number} currentDayStart Current NY weekday midnight, or 0 on weekends.
- * @param {number} nextDayStart Next NY weekday midnight.
+ * @param {boolean} isTradingDay Whether the current NY date is a trading day.
+ * @param {number} previousDayStart Previous NY trading-day midnight.
+ * @param {number} currentDayStart Current NY midnight, or 0 on non-trading days.
+ * @param {number} nextDayStart Next NY trading-day midnight.
  * @param {number} openOffset Session opening offset from NY midnight.
  * @param {number} closeOffset Session closing offset from NY midnight.
  * @returns {{isOpen: boolean, last: Object, next: Object}}
  */
 const createMarketState = (
   now,
-  isWeekday,
+  isTradingDay,
   previousDayStart,
   currentDayStart,
   nextDayStart,
@@ -166,7 +168,7 @@ const createMarketState = (
   let lastDayStart = previousDayStart
   let unopenedDayStart = nextDayStart
 
-  if (isWeekday) {
+  if (isTradingDay) {
     const opensAt = currentDayStart + openOffset
     const closesAt = currentDayStart + closeOffset
 
@@ -210,8 +212,8 @@ const createMarketState = (
  * - postMarket:    16:00–20:00 America/New_York
  * - market:        04:00–20:00 America/New_York
  *
- * Weekends are skipped.
- * Exchange holidays and early closes are not modeled.
+ * Weekends and full-day NYSE holidays (including listed ad-hoc closures) are skipped.
+ * Early closes are not modeled. Ad-hoc closure dates require manual maintenance.
  *
  * @param {Date} date Point in time to evaluate.
  * @returns {Object}
@@ -249,34 +251,8 @@ export const getNyMarketSession = (date = new Date()) => {
     dayOfWeek <= 5
 
   const isWeekend = !isWeekday
-
-  /*
-   * Direct weekday arithmetic avoids scanning through calendar days.
-   *
-   * Previous:
-   * Sun -> Fri (-2)
-   * Mon -> Fri (-3)
-   * All others -> previous day (-1)
-   */
-  const previousDayOffset =
-    dayOfWeek === 0
-      ? -2
-      : dayOfWeek === 1
-        ? -3
-        : -1
-
-  /*
-   * Next:
-   * Fri -> Mon (+3)
-   * Sat -> Mon (+2)
-   * All others -> next day (+1)
-   */
-  const nextDayOffset =
-    dayOfWeek === 5
-      ? 3
-      : dayOfWeek === 6
-        ? 2
-        : 1
+  const isHoliday = isNyMarketHoliday(calendarMs)
+  const isTradingDay = isWeekday && !isHoliday
 
   /*
    * Resolve previous and next independently.
@@ -284,11 +260,11 @@ export const getNyMarketSession = (date = new Date()) => {
    * across a DST-change weekend.
    */
   const previousDayStart = getNyDayStart(
-    calendarMs + (previousDayOffset * DAY_IN_MS)
+    getAdjacentNyTradingDate(calendarMs, -1)
   )
 
   const nextDayStart = getNyDayStart(
-    calendarMs + (nextDayOffset * DAY_IN_MS)
+    getAdjacentNyTradingDate(calendarMs, 1)
   )
 
   /*
@@ -310,7 +286,7 @@ export const getNyMarketSession = (date = new Date()) => {
   const currentUtcOffset =
     representedAsUtc - nowWithoutMs
 
-  const currentDayStart = isWeekday
+  const currentDayStart = isTradingDay
     ? calendarMs - currentUtcOffset
     : 0
 
@@ -319,7 +295,7 @@ export const getNyMarketSession = (date = new Date()) => {
    */
   const market = createMarketState(
     now,
-    isWeekday,
+    isTradingDay,
     previousDayStart,
     currentDayStart,
     nextDayStart,
@@ -332,7 +308,7 @@ export const getNyMarketSession = (date = new Date()) => {
    */
   const regularMarket = createMarketState(
     now,
-    isWeekday,
+    isTradingDay,
     previousDayStart,
     currentDayStart,
     nextDayStart,
@@ -345,7 +321,7 @@ export const getNyMarketSession = (date = new Date()) => {
    */
   const preMarket = createMarketState(
     now,
-    isWeekday,
+    isTradingDay,
     previousDayStart,
     currentDayStart,
     nextDayStart,
@@ -358,7 +334,7 @@ export const getNyMarketSession = (date = new Date()) => {
    */
   const postMarket = createMarketState(
     now,
-    isWeekday,
+    isTradingDay,
     previousDayStart,
     currentDayStart,
     nextDayStart,
@@ -378,6 +354,7 @@ export const getNyMarketSession = (date = new Date()) => {
   return {
     session,
     isDST: currentUtcOffset === -4 * HOUR_IN_MS,
+    isHoliday,
 
     isWeekday,
     isWeekend,
