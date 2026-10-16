@@ -378,8 +378,15 @@ export const getNyMarketSession = (date = new Date()) => {
           ? 'post-market'
           : 'closed'
 
+  const currentDayStart = isWeekday
+    ? calendarMs - currentUtcOffset
+    : 0
+
+  
+
   return {
     session,
+    isDST: currentUtcOffset === -4 * HOUR_IN_MS,
 
     isWeekday,
     isWeekend,
