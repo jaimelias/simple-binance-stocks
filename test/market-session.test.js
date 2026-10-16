@@ -80,13 +80,29 @@ test('last/next skip Friday and Monday holidays, observed holidays, and year bou
   }
 })
 
-test('ad-hoc closures skip a mourning day and consecutive storm closures', () => {
-  assertClosedOccurrences('2025-01-09T12:00:00-05:00', '2025-01-08T00:00:00-05:00', '2025-01-10T00:00:00-05:00')
-  for (const day of ['29', '30']) {
-    assertClosedOccurrences(`2012-10-${day}T12:00:00-04:00`, '2012-10-26T00:00:00-04:00', '2012-10-31T00:00:00-04:00')
+test('ad-hoc closure dates follow ordinary weekday sessions and last/next occurrences', () => {
+  for (const [date, previous, next, offset] of [
+    ['2025-01-09', '2025-01-08', '2025-01-10', '-05:00'],
+    ['2012-10-29', '2012-10-26', '2012-10-30', '-04:00'],
+    ['2012-10-30', '2012-10-29', '2012-10-31', '-04:00'],
+  ]) {
+    const midnight = Date.parse(`${date}T00:00:00${offset}`)
+    const previousState = sessionAt(`${previous}T21:00:00${offset}`)
+    const nextState = sessionAt(`${next}T03:00:00${offset}`)
+    for (const [name, [open]] of Object.entries(windows)) {
+      const opensAt = midnight + open * HOUR_IN_MS
+      const state = getNyMarketSession(new Date(opensAt))
+      assert.equal(state.isHoliday, false, date)
+      assert.equal(state.isWeekday, true, date)
+      assert.equal(state.isWeekend, false, date)
+      assert.equal(state[name].isOpen, true, `${date} ${name}`)
+      assert.equal(state[name].last.opensAt, opensAt, `${date} ${name}`)
+      assert.equal(state[name].next.opensAt,
+        Date.parse(`${next}T00:00:00${offset}`) + open * HOUR_IN_MS, `${date} ${name}`)
+      assert.equal(previousState[name].next.opensAt, opensAt, `${date} ${name}`)
+      assert.equal(nextState[name].last.opensAt, opensAt, `${date} ${name}`)
+    }
   }
-  assert.equal(sessionAt('2012-10-26T12:00:00-04:00').regularMarket.next.opensAt, Date.parse('2012-10-31T09:30:00-04:00'))
-  assert.equal(sessionAt('2012-10-31T08:00:00-04:00').regularMarket.last.opensAt, Date.parse('2012-10-26T09:30:00-04:00'))
 })
 
 test('Saturday New Year does not close Friday; Sunday New Year closes Monday', () => {
