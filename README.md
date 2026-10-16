@@ -33,7 +33,9 @@ Every endpoint receives `X-MBX-APIKEY`. `TRADE` and `USER_DATA` requests receive
 | --- | --- |
 | `getQuote(symbol)` | Promise of the raw quote response, or `null` for a successful empty response. Quotes include `bidPrice` and `askPrice` decimal strings when available. |
 | `getSymbolInfo(symbol)` | Promise of the matching exchange-info rule object, or `undefined` if absent. Fetches fresh exchange info on every call; matching is case sensitive. |
-| `getNyMarketSession()` | Synchronous market-session helper. It does not model exchange holidays or early closes and does not authorize an order. |
+| `getNyMarketSession()` | Synchronous market-session helper with a top-level boolean `isDST`: `true` when New York currently observes daylight saving time (UTC−4), otherwise `false`. It does not model exchange holidays or early closes and does not authorize an order. |
+
+The standalone `getNyMarketSession(date)` utility evaluates `isDST` at the supplied `Date` (defaults to now), including weekends and the exact DST transition instant. It describes that instant, independently of the `last` and `next` session occurrences.
 
 These methods retain their existing signatures and response behavior. The new methods trim and uppercase ticker inputs; existing market methods retain their original symbol handling.
 

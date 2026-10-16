@@ -291,31 +291,28 @@ export const getNyMarketSession = (date = new Date()) => {
     calendarMs + (nextDayOffset * DAY_IN_MS)
   )
 
-  let currentDayStart = 0
-
   /*
    * The current NY UTC offset can be derived from the parts we already
    * extracted, avoiding another Intl.DateTimeFormat call.
    */
-  if (isWeekday) {
-    const representedAsUtc = Date.UTC(
-      year,
-      month - 1,
-      day,
-      hour,
-      minute,
-      second
-    )
+  const representedAsUtc = Date.UTC(
+    year,
+    month - 1,
+    day,
+    hour,
+    minute,
+    second
+  )
 
-    const nowWithoutMs =
-      now - date.getUTCMilliseconds()
+  const nowWithoutMs =
+    now - date.getUTCMilliseconds()
 
-    const currentUtcOffset =
-      representedAsUtc - nowWithoutMs
+  const currentUtcOffset =
+    representedAsUtc - nowWithoutMs
 
-    currentDayStart =
-      calendarMs - currentUtcOffset
-  }
+  const currentDayStart = isWeekday
+    ? calendarMs - currentUtcOffset
+    : 0
 
   /*
    * Whole extended trading day: 04:00–20:00 NY.
@@ -377,12 +374,6 @@ export const getNyMarketSession = (date = new Date()) => {
         : postMarket.isOpen
           ? 'post-market'
           : 'closed'
-
-  const currentDayStart = isWeekday
-    ? calendarMs - currentUtcOffset
-    : 0
-
-  
 
   return {
     session,
