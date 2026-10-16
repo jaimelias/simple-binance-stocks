@@ -370,7 +370,7 @@ export const getNyMarketSession = (date = new Date()) => {
     preMarket.isOpen
       ? 'pre-market'
       : regularMarket.isOpen
-        ? 'regular'
+        ? 'regular-market'
         : postMarket.isOpen
           ? 'post-market'
           : 'closed'
