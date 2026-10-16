@@ -29,8 +29,8 @@ export default class BinanceStocksCore {
     this.API_SECRET = options.API_SECRET;
   }
 
-  getNyMarketSession() {
-    return getNyMarketSession();
+  getNyMarketSession(date) {
+    return getNyMarketSession(date);
   }
 
   async getQuote(symbol) {

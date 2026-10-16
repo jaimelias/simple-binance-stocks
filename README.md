@@ -6,10 +6,16 @@ JavaScript client for Binance Stocks and ETFs in Node.js and Google Apps Script 
 
 ## Setup
 
-Import the Node.js entry point and provide your credentials from your environment:
+Install the package in your Node.js project:
+
+```sh
+npm install simple-binance-stocks
+```
+
+The package uses ES modules. Add `"type": "module"` to your project's `package.json`, or use a `.mjs` file. Import the default export and provide credentials from your environment:
 
 ```js
-import BinanceStocks from './src/BinanceStocksNode.js'
+import BinanceStocks from 'simple-binance-stocks'
 
 const client = new BinanceStocks({
   API_KEY: process.env.BINANCE_API_KEY,
@@ -21,7 +27,7 @@ const client = new BinanceStocks({
 
 `baseUrl` defaults to `https://api.binance.com`. `errorLogger` defaults to `console.error` and receives errors from the API adapters before they are rethrown. Keep credentials private. There is no constructor `recvWindow` option.
 
-For GAS, run `npm run build` and load the generated `dist/BinanceStocksGas.min.js` in your Apps Script project. It exposes `BinanceStocks`; instantiate it with the same options, obtaining secrets from your chosen GAS secret storage. Use `await` in an async entry function. All thirteen trading, history, wallet, and portfolio methods return Promises in both runtimes. GAS uses `UrlFetchApp` and `Utilities` internally.
+For GAS, run `npm install` and `npm run build` from a repository checkout, then load the generated `dist/BinanceStocksGas.min.js` in your Apps Script project. It exposes `BinanceStocks`; instantiate it with the same options, obtaining secrets from your chosen GAS secret storage. Use `await` in an async entry function. All thirteen trading, history, wallet, and portfolio methods return Promises in both runtimes. GAS uses `UrlFetchApp` and `Utilities` internally.
 
 Client methods use standard class receiver binding. Call them on the client instance, or bind them when passing them as callbacks, for example `client.getQuote.bind(client)`.
 
