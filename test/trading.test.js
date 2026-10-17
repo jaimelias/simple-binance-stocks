@@ -20,6 +20,11 @@ const monetaryOrders = ['BUY', 'SELL'].flatMap(side => [
   ['createLimitOrder', limit({ side })],
   ['createMarketOrder', { symbol: 'aapl', amountInUSD: 10, side }]
 ])
+const placementOrders = [...monetaryOrders, ...['BUY', 'SELL'].flatMap(side => [
+  ['placeOrder', direct({ side })],
+  ['placeOrder', { symbol: 'aapl', orderType: 'MARKET', side,
+    ...(side === 'SELL' ? { quantity: '1' } : { notional: '10' }) }]
+])]
 
 /** Exercise the real adapters using deterministic, offline HTTP and GAS runtime substitutes. */
 const harness = (t, Client) => {
@@ -160,8 +165,8 @@ for (const Client of [NodeClient, GasClient]) {
     await client.createLimitOrder(limit({ side: 'SELL', rejectMarketable: true }))
     assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 2)
     state.quote = { bidPrice: '3.00000000000000000001', askPrice: '2.99999999999999999999' }
-    await assert.rejects(client.createLimitOrder(limit({ rejectMarketable: true })), /rejectMarketable/)
-    await assert.rejects(client.createLimitOrder(limit({ side: 'SELL', rejectMarketable: true })), /rejectMarketable/)
+    await assert.rejects(client.createLimitOrder(limit({ rejectMarketable: true })), /askPrice/)
+    await assert.rejects(client.createLimitOrder(limit({ side: 'SELL', rejectMarketable: true })), /askPrice/)
     assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 2)
   })
 
@@ -193,12 +198,11 @@ for (const Client of [NodeClient, GasClient]) {
       await assert.rejects(client.createLimitOrder(limit({ rejectMarketable })), /rejectMarketable must be a boolean/)
     }
     assert.equal(calls.length, 0)
-    state.quote = null
     await client.createLimitOrder(limit())
     await client.createLimitOrder(limit({ rejectMarketable: false }))
     await client.createLimitOrder(limit({ rejectMarketable: undefined }))
     assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 3)
-    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 0)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 3)
     assert.ok(calls.every(call => call.payload.rejectMarketable === undefined))
     await assert.rejects(client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 10, rejectMarketable: true }), /rejectMarketable is not allowed/)
     await assert.rejects(client.placeOrder(direct({ rejectMarketable: true })), /rejectMarketable is not allowed/)
@@ -257,42 +261,121 @@ for (const Client of [NodeClient, GasClient]) {
     assert.ok(calls.every(call => call.payload.maxSpreadPercent === undefined))
   })
 
-  check('maxSpreadPercent zero allows only a zero spread, including sub-number-precision differences', async ({ client, calls, state }) => {
-    for (const [method, params] of monetaryOrders) {
+  check('maxSpreadPercent accepts tiny positive limits and compares sub-number-precision differences', async ({ client, calls, state }) => {
+    for (const [method, params] of placementOrders) {
       state.quote = { bidPrice: '100', askPrice: '100' }
-      await client[method]({ ...params, maxSpreadPercent: 0 })
+      await client[method]({ ...params, maxSpreadPercent: 1e-20 })
       state.quote.askPrice = '100.000000000000000001'
-      await assert.rejects(client[method]({ ...params, maxSpreadPercent: 0 }), /maxSpreadPercent/)
       await assert.rejects(client[method]({ ...params, maxSpreadPercent: 1e-20 }), /maxSpreadPercent/)
       await client[method]({ ...params, maxSpreadPercent: 1e-18 })
     }
-    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 8)
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, placementOrders.length * 2)
   })
 
-  check('maxSpreadPercent validates before requests and omission preserves existing quote requirements', async ({ client, calls, state }) => {
-    for (const [method, params] of monetaryOrders) {
-      for (const maxSpreadPercent of [null, '0.1', NaN, Infinity, -Infinity, -1, true, false, {}, []]) {
-        await assert.rejects(client[method]({ ...params, maxSpreadPercent }), /maxSpreadPercent must be a finite nonnegative number/)
+  check('maxSpreadPercent validates before requests on every placement path', async ({ client, calls }) => {
+    for (const [method, params] of placementOrders) {
+      for (const maxSpreadPercent of [0, -0, 2.0000000000000004, 3, Number.MAX_VALUE,
+        null, '', '0.1', NaN, Infinity, -Infinity, -1, true, false, {}, []]) {
+        await assert.rejects(client[method]({ ...params, maxSpreadPercent }), error =>
+          error instanceof TypeError && /maxSpreadPercent.*greater than 0 and at most 2/.test(error.message))
       }
     }
-    await assert.rejects(client.placeOrder(direct({ maxSpreadPercent: 0.1 })), /maxSpreadPercent is not allowed/)
     assert.equal(calls.length, 0)
-    for (const extra of [{}, { maxSpreadPercent: undefined }]) {
-      state.quote = null
-      for (const [method, params] of monetaryOrders.filter(([method, params]) => method === 'createLimitOrder' || params.side === 'BUY')) {
+  })
+
+  check('default and explicit 2% spread thresholds enforce the exact inclusive boundary', async ({ client, calls, state }) => {
+    for (const extra of [{}, { maxSpreadPercent: undefined }, { maxSpreadPercent: 2 }]) {
+      for (const [method, params] of placementOrders) {
+        state.quote = { bidPrice: '99', askPrice: '101' }
         const start = calls.length
         await client[method]({ ...params, ...extra })
-        assert.deepEqual(calls.slice(start).map(call => call.path.split('/').at(-1)), ['exchangeInfo', 'place'])
+        assert.deepEqual(calls.slice(start).map(call => call.path.split('/').at(-1)), ['exchangeInfo', 'quote', 'place'])
+        state.quote.askPrice = '101.000000000000000001'
+        await assert.rejects(client[method]({ ...params, ...extra }), error =>
+          error instanceof RangeError && /maxSpreadPercent.*2%/.test(error.message) && error.clientOrderId === undefined)
       }
-      state.quote = { bidPrice: '3' }
-      await client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 10, side: 'SELL', ...extra })
-      assert.equal(calls.at(-1).payload.quantity, '3.333')
     }
-    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 2)
-    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 8)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, placementOrders.length * 6)
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, placementOrders.length * 3)
+    assert.ok(calls.every(call => call.payload.maxSpreadPercent === undefined))
   })
 
-  check('maxSpreadPercent rejects invalid, crossed and mismatched quotes before generating IDs or submitting', async ({ client, calls, state }) => {
+  check('direct placement accepts a stricter spread threshold without forwarding it to Binance', async ({ client, calls, state }) => {
+    state.quote = { bidPrice: '99.95', askPrice: '100.05' }
+    for (const [, params] of placementOrders.filter(([method]) => method === 'placeOrder')) {
+      await client.placeOrder({ ...params, maxSpreadPercent: 0.1 })
+      await assert.rejects(client.placeOrder({ ...params, maxSpreadPercent: 0.0999 }), /maxSpreadPercent/)
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 8)
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 4)
+    assert.ok(calls.every(call => call.payload.maxSpreadPercent === undefined))
+  })
+
+  check('the default spread guard rejects unavailable quotes on every placement path', async ({ client, calls, state }) => {
+    let generated = 0
+    client.createClientOrderId = () => { generated++; return randomUUID() }
+    for (const extra of [{}, { maxSpreadPercent: undefined }]) {
+      for (const [method, params] of placementOrders) {
+        for (const quote of [null, {}, { bidPrice: '3' }, { askPrice: '3.01' }]) {
+          state.quote = quote
+          await assert.rejects(client[method]({ ...params, ...extra }))
+        }
+      }
+    }
+    assert.equal(generated, 0)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, placementOrders.length * 8)
+    assert.equal(calls.filter(call => call.method === 'POST').length, 0)
+  })
+
+  check('raw apiClient placement cannot bypass the spread guard', async ({ client, calls }) => {
+    for (const [, params] of placementOrders.filter(([method]) => method === 'placeOrder')) {
+      await assert.rejects(client.apiClient('placeOrder', params), error =>
+        error instanceof TypeError && /placeOrder/.test(error.message))
+    }
+    assert.equal(calls.length, 0)
+  })
+
+  check('the default guard blocks EWT and USO across helpers, direct placement and wallet selling and logs rejections', async ({ client, calls, state, errors }) => {
+    const quotes = [
+      { symbol: 'EWT', bidPrice: '96.84', askPrice: '115.52', bidSize: 100, askSize: 100 },
+      { symbol: 'USO', bidPrice: '104.08', askPrice: '163', bidSize: 100, askSize: 100 }
+    ]
+    let generated = 0
+    client.createClientOrderId = () => { generated++; return randomUUID() }
+    for (const quote of quotes) {
+      state.rules = { ...rules(), symbol: quote.symbol }
+      state.quote = quote
+      for (const [method, params] of placementOrders) {
+        await assert.rejects(client[method]({ ...params, symbol: quote.symbol }), error => {
+          assert.ok(error instanceof RangeError)
+          assert.match(error.message, /maxSpreadPercent.*2%/)
+          assert.equal(error.clientOrderId, undefined)
+          assert.ok(errors.includes(error))
+          return true
+        })
+      }
+    }
+    state.trades = page(quotes.map(({ symbol }, i) => fill(i, { symbol, qty: '1' })))
+    state.handler = call => {
+      if (call.path.endsWith('/exchangeInfo')) return { symbols: quotes.map(({ symbol }) => ({ ...rules(), symbol })) }
+      if (call.path.endsWith('/quote')) return quotes.find(({ symbol }) => symbol === call.payload.symbol)
+    }
+    const results = await client.sellPositions(null)
+    assert.equal(results.length, 2)
+    for (const [i, { symbol, quantity, error }] of results.entries()) {
+      assert.equal(symbol, quotes[i].symbol)
+      assert.equal(quantity, '1')
+      assert.ok(error instanceof RangeError)
+      assert.match(error.message, /maxSpreadPercent.*2%/)
+      assert.equal(error.clientOrderId, undefined)
+      assert.ok(errors.includes(error))
+    }
+    assert.equal(generated, 0)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, placementOrders.length * 2 + 2)
+    assert.equal(calls.filter(call => call.method === 'POST').length, 0)
+  })
+
+  check('maxSpreadPercent logs invalid, crossed and mismatched quotes before generating IDs or submitting', async ({ client, calls, state, errors }) => {
     let generated = 0
     client.createClientOrderId = () => { generated++; return randomUUID() }
     const valid = { bidPrice: '3', askPrice: '3.01' }
@@ -300,28 +383,28 @@ for (const Client of [NodeClient, GasClient]) {
       ...['bidPrice', 'askPrice'].flatMap(field =>
         [undefined, null, '0', '-1', 'invalid', false, 'Infinity'].map(value => ({ ...valid, [field]: value }))),
       ...['MSFT', '', null, 123].map(symbol => ({ ...valid, symbol }))]
-    for (const [method, params] of monetaryOrders) {
+    for (const [method, params] of placementOrders) {
       for (const quote of invalid) {
         state.quote = quote
-        await assert.rejects(client[method]({ ...params, maxSpreadPercent: 1 }))
+        await assert.rejects(client[method]({ ...params, maxSpreadPercent: 1 }), error => errors.at(-1) === error)
       }
     }
     assert.equal(generated, 0)
-    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, monetaryOrders.length * invalid.length)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, placementOrders.length * invalid.length)
     assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
   })
 
-  check('maxSpreadPercent propagates quote failures without retries or submission', async ({ client, calls, state }) => {
+  check('the default spread guard propagates quote failures without retries or submission', async ({ client, calls, state }) => {
     const error = new TypeError('quote transport disconnected')
-    for (const [method, params] of monetaryOrders) {
+    for (const [method, params] of placementOrders) {
       state.handler = call => call.path.endsWith('/quote') ? { httpStatus: 503, rawBody: 'quote unavailable' } : undefined
-      await assert.rejects(client[method]({ ...params, maxSpreadPercent: 1 }), actual =>
+      await assert.rejects(client[method](params), actual =>
         /503/.test(actual.message) && actual.clientOrderId === undefined)
       state.handler = call => { if (call.path.endsWith('/quote')) throw error }
-      await assert.rejects(client[method]({ ...params, maxSpreadPercent: 1 }), actual => actual === error)
+      await assert.rejects(client[method](params), actual => actual === error)
     }
     assert.equal(error.clientOrderId, undefined)
-    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 8)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, placementOrders.length * 2)
     assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
   })
 
@@ -351,18 +434,18 @@ for (const Client of [NodeClient, GasClient]) {
     assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
   })
 
-  check('market BUY uses notional without a quote; SELL uses one bid and rounds down', async ({ client, calls, state }) => {
+  check('market BUY uses notional and both sides share one spread quote with sizing', async ({ client, calls, state }) => {
     state.rules.fractionable = false
     state.rules.fractionableEh = false
     await client.createMarketOrder({ symbol: 'aapl', amountInUSD: 10 })
-    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 0)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 1)
     await client.createMarketOrder({ symbol: 'aapl', side: 'SELL', amountInUSD: 10, walletType: 'CARD' })
     const orders = calls.filter(call => call.path.endsWith('/place'))
     assert.equal(orders[0].payload.notional, '10')
     assert.equal(orders[0].payload.quantity, undefined)
     assert.equal(orders[1].payload.quantity, '3.333')
     assert.equal(orders[1].payload.notional, undefined)
-    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 1)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 2)
     for (const order of orders) {
       for (const field of ['price', 'entryPrice', 'amountInUSD', 'tradingSession']) assert.equal(order.payload[field], undefined)
     }
@@ -479,7 +562,7 @@ for (const Client of [NodeClient, GasClient]) {
       { symbol: 'NVDA', quantity: '2.1', ack: state.placement }
     ])
     assert.deepEqual(calls.map(call => call.path.replace('/sapi/v1/equity/', '')), [
-      'trade/history', 'market/exchangeInfo', 'order/place', 'market/exchangeInfo', 'order/place'
+      'trade/history', 'market/exchangeInfo', 'market/quote', 'order/place', 'market/exchangeInfo', 'market/quote', 'order/place'
     ])
     const orders = calls.filter(call => call.path.endsWith('/place'))
     for (const { payload } of orders) {
@@ -570,7 +653,7 @@ for (const Client of [NodeClient, GasClient]) {
     assert.deepEqual(orders.map(call => call.payload.symbol), ['MSFT', 'NVDA', 'VOO'])
     assert.equal(failure.clientOrderId, orders[1].payload.clientOrderId)
     assert.match(failure.clientOrderId, /^[a-f0-9-]{36}$/)
-    assert.ok(calls.every(call => ['history', 'exchangeInfo', 'place'].includes(call.path.split('/').at(-1))))
+    assert.ok(calls.every(call => ['history', 'exchangeInfo', 'quote', 'place'].includes(call.path.split('/').at(-1))))
   })
 
   check('history fetches one requested page with filters and no placement defaults', async ({ client, calls, state }) => {
@@ -772,7 +855,7 @@ for (const Client of [NodeClient, GasClient]) {
     }
     assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
     state.handler = call => call.path.endsWith('/quote') && call.payload.symbol === 'AAPL'
-      ? { symbol: ' aapl ', bidPrice: '10' } : undefined
+      ? { symbol: ' aapl ', bidPrice: '10', askPrice: '10.01' } : undefined
     assert.deepEqual((await client.getPortfolio()).totals, { totalUsd: 26, positionsUsd: 16, cashUsd: 10 })
     await client.createMarketOrder({ symbol: 'AAPL', side: 'SELL', amountInUSD: 100 })
     const orders = calls.filter(call => call.path.endsWith('/place'))

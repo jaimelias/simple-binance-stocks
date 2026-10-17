@@ -41,10 +41,10 @@ export default class BinanceStocksCore {
     return getSymbolInfo(this, symbol)
   }
 
-  /** Size a LIMIT order with optional maxSpreadPercent and rejectMarketable guards. */
+  /** Size a LIMIT order with a default 2% spread limit and optional rejectMarketable. */
   async createLimitOrder(options) { return createLimitOrder(this, options) }
 
-  /** Submit a MARKET buy by notional or size a sell using the bid, with optional maxSpreadPercent. */
+  /** Submit a MARKET buy by notional or size a sell using the bid, with a default 2% spread limit. */
   async createMarketOrder(options) { return createMarketOrder(this, options) }
 
   /** Validate and submit an explicit Binance order without resizing it. */

@@ -1,5 +1,14 @@
 import * as endpointAsserts from './endpointAsserts.js'
-import { decimalValue, normalizeSymbol, publicOptions } from './publicInputs.js'
+import { decimalValue, normalizeSymbol, publicOptions, validateMaxSpreadPercent } from './publicInputs.js'
+
+const guardedOrders = new WeakMap()
+
+/** Let an adapter consume a single submission authorized by the shared order guard. */
+export const consumeOrderGuard = (main, payload) => {
+  if (guardedOrders.get(payload) !== main) return false
+  guardedOrders.delete(payload)
+  return true
+}
 
 export const placementFields = [
   'symbol', 'side', 'timeInForce', 'walletType', 'tokenize', 'clientOrderId', 'recvWindow', 'quoteAsset'
@@ -92,25 +101,30 @@ const assertMaxSpread = (quote, maxSpreadPercent) => {
   const ask = decimalValue(quote?.askPrice, 'quote.askPrice')
   if (ask.lt(bid)) throw new RangeError('quote.askPrice must be greater than or equal to quote.bidPrice')
   if (ask.minus(bid).times(200).gt(ask.plus(bid).times(maxSpreadPercent))) {
-    throw new RangeError(`maxSpreadPercent: quote spread exceeds ${maxSpreadPercent}%`)
+    throw new RangeError(`maxSpreadPercent: quote spread exceeds ${maxSpreadPercent}% (bid ${bid}, ask ${ask})`)
   }
 }
 
-/** Validate, check optional guards against one quote, and submit once with a reconciliation ID. */
+/** Validate, check the spread against one quote, and submit once with a reconciliation ID. */
 export const submitOrder = async (main, payload, rules,
-  { estimatedNotional, rejectMarketable = false, maxSpreadPercent, quote } = {}) => {
+  { estimatedNotional, rejectMarketable = false, maxSpreadPercent = 2, quote } = {}) => {
+  validateMaxSpreadPercent(maxSpreadPercent)
   endpointAsserts.placeOrder(payload)
   validateOrderRules(payload, rules, estimatedNotional)
-  if (rejectMarketable || maxSpreadPercent !== undefined) {
-    if (quote === undefined) quote = await main.getQuote(payload.symbol)
+  if (quote === undefined) quote = await main.getQuote(payload.symbol)
+  try {
     if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== payload.symbol) {
       throw new TypeError('quote.symbol does not match the order symbol')
     }
-    if (maxSpreadPercent !== undefined) assertMaxSpread(quote, maxSpreadPercent)
+    assertMaxSpread(quote, maxSpreadPercent)
     if (rejectMarketable) assertNonMarketable(payload, quote)
+  } catch (error) {
+    main.errorLogger(error)
+    throw error
   }
   if (payload.clientOrderId === undefined) payload.clientOrderId = main.createClientOrderId()
   endpointAsserts.placeOrder(payload)
+  guardedOrders.set(payload, main)
   try {
     return await main.apiClient('placeOrder', payload)
   } catch (error) {
@@ -118,5 +132,7 @@ export const submitOrder = async (main, payload, rules,
       error.clientOrderId = payload.clientOrderId
     }
     throw error
+  } finally {
+    guardedOrders.delete(payload)
   }
 }

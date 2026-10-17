@@ -1,6 +1,7 @@
 import { nodeFetch } from "./nodeFetch.js";
 import { endpoints } from "../utilities/endpointsMaster.js";
 import * as endpointAsserts from '../utilities/endpointAsserts.js';
+import { consumeOrderGuard } from '../utilities/orderPreparation.js';
 
 
 export const nodeApiClient = async (main, key, payload) => {
@@ -11,6 +12,9 @@ export const nodeApiClient = async (main, key, payload) => {
             throw new Error('Invalid core request.');
         }
     
+        if (key === 'placeOrder' && !consumeOrderGuard(main, payload)) {
+            throw new TypeError('Use placeOrder, createLimitOrder or createMarketOrder to submit guarded orders');
+        }
         endpointAsserts[key](payload);
         
         const endpoint = endpoints[key];

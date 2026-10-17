@@ -2,9 +2,9 @@ import { publicOptions, orderAmount, decimalValue, normalizeSymbol, validateMaxS
 import { placeOrder as assertOrder } from '../utilities/endpointAsserts.js'
 import { placementFields, placementPayload, loadOrderRules, submitOrder } from '../utilities/orderPreparation.js'
 
-/** Buy by notional or size a sell using one bid quote, optionally guarding the spread. */
+/** Buy by notional or size a sell using one bid quote, always guarding the spread. */
 export const createMarketOrder = async (main, options) => {
-  const { amountInUSD, maxSpreadPercent, ...params } = publicOptions(options,
+  const { amountInUSD, maxSpreadPercent = 2, ...params } = publicOptions(options,
     [...placementFields, 'amountInUSD', 'maxSpreadPercent'])
   validateMaxSpreadPercent(maxSpreadPercent)
   const amount = orderAmount(amountInUSD)
@@ -16,10 +16,16 @@ export const createMarketOrder = async (main, options) => {
   let quote
   if (payload.side === 'SELL') {
     quote = await main.getQuote(payload.symbol)
-    if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== payload.symbol) {
-      throw new TypeError('quote.symbol does not match the order symbol')
+    let bid
+    try {
+      if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== payload.symbol) {
+        throw new TypeError('quote.symbol does not match the order symbol')
+      }
+      bid = decimalValue(quote?.bidPrice, 'quote.bidPrice')
+    } catch (error) {
+      main.errorLogger(error)
+      throw error
     }
-    const bid = decimalValue(quote?.bidPrice, 'quote.bidPrice')
     const quantity = amount.divToInt(bid.times(rules.stepSize)).times(rules.stepSize)
     payload.quantity = quantity.toString()
     estimatedNotional = quantity.times(bid)

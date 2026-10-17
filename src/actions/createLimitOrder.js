@@ -2,9 +2,9 @@ import { publicOptions, orderAmount, decimalValue, validateMaxSpreadPercent } fr
 import { placeOrder as assertOrder } from '../utilities/endpointAsserts.js'
 import { placementFields, placementPayload, loadOrderRules, submitOrder } from '../utilities/orderPreparation.js'
 
-/** Size a LIMIT order with optional spread and marketability guards. */
+/** Size a LIMIT order with a required spread check and optional marketability guard. */
 export const createLimitOrder = async (main, options) => {
-  const { amountInUSD, entryPrice, rejectMarketable = false, maxSpreadPercent, ...params } = publicOptions(options,
+  const { amountInUSD, entryPrice, rejectMarketable = false, maxSpreadPercent = 2, ...params } = publicOptions(options,
     [...placementFields, 'amountInUSD', 'entryPrice', 'tradingSession', 'rejectMarketable', 'maxSpreadPercent'])
   if (typeof rejectMarketable !== 'boolean') throw new TypeError('rejectMarketable must be a boolean')
   validateMaxSpreadPercent(maxSpreadPercent)

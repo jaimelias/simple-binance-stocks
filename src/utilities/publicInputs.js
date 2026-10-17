@@ -44,10 +44,10 @@ export const orderAmount = (value) => {
   return new Decimal(value)
 }
 
-/** Validate the optional spread threshold in percentage points. */
+/** Validate the effective spread threshold in percentage points. */
 export const validateMaxSpreadPercent = (value) => {
-  if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
-    throw new TypeError('maxSpreadPercent must be a finite nonnegative number')
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > 2) {
+    throw new TypeError('maxSpreadPercent must be a finite number greater than 0 and at most 2')
   }
 }
 

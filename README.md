@@ -80,18 +80,19 @@ These three placement methods accept these common options:
 | `tokenize` | Optional boolean; explicit `false` is preserved. Omission keeps the server default. |
 | `clientOrderId` | Optional string matching `/^[A-Za-z0-9_-]{32,36}$/`. When omitted, the client generates one UUID for the submission. |
 | `recvWindow` | Optional signed-request window in milliseconds. |
+| `maxSpreadPercent` | Finite JavaScript number with `0 < maxSpreadPercent <= 2`, in percentage points; omitted or `undefined` uses `2` (2%). Always enforced for BUY and SELL. |
 
 Options must be plain objects. Unsupported fields are rejected; fields with `undefined` values are treated as omitted. Explicit `null` values for `side`, `timeInForce`, and `quoteAsset` are rejected in both Node.js and GAS. Enumerations are case sensitive. Prices, quantities, and notionals accept positive plain decimal strings or finite positive numbers, and numbers are converted to their JavaScript decimal representation. Decimal strings are preferred when preserving input precision matters. LIMIT prices must have at most two decimal places, including trailing decimal zeros in a string; prices are never rounded.
 
 ### Monetary convenience methods
 
-`createLimitOrder({ symbol, amountInUSD, entryPrice, tradingSession, rejectMarketable = false, maxSpreadPercent, ...commonOptions })`
+`createLimitOrder({ symbol, amountInUSD, entryPrice, tradingSession, rejectMarketable = false, maxSpreadPercent = 2, ...commonOptions })`
 
 `amountInUSD` must be a finite JavaScript **number greater than zero**; numeric strings are rejected. It is the target USD order value before fees, funded in USDC, without currency conversion. The method computes `floor(amountInUSD / entryPrice / stepSize) × stepSize` using exact decimal arithmetic. Both BUY and SELL use the validated price that will be submitted. A rounded quantity of zero or a quantity/notional below the symbol minimum is rejected rather than increased.
 
 `tradingSession` is required: `RTH`, `EXTENDED`, or `24H`. Requested extended and overnight sessions must be supported by the symbol. Fractional LIMIT orders must have the applicable regular or extended fractional support. Fractional GTC requires EXTENDED or 24H. Binance remains authoritative for current session availability, price bands, account restrictions, and execution.
 
-Set the optional boolean `rejectMarketable: true` to fetch one quote after sizing and rule validation, immediately before submission. BUY rejects when `entryPrice >= askPrice`; SELL rejects when `entryPrice <= bidPrice`. Comparisons use exact decimals. A missing or invalid required quote price, a mismatched quote symbol when present, or a failed quote request also rejects the order before submission. The guard never adjusts price or quantity, retries, or sends `rejectMarketable` to Binance. Omission or `false` skips the marketability check. This option belongs to `createLimitOrder`; direct `placeOrder` and `createMarketOrder` do not accept it.
+Set the optional boolean `rejectMarketable: true` to check the same quote used by the required spread guard, after sizing and rule validation. BUY rejects when `entryPrice >= askPrice`; SELL rejects when `entryPrice <= bidPrice`. Comparisons use exact decimals. A missing or invalid required quote price, a mismatched quote symbol when present, or a failed quote request also rejects the order before submission. The guard never adjusts price or quantity, retries, or sends `rejectMarketable` to Binance. Omission or `false` skips the marketability check. This option belongs to `createLimitOrder`; direct `placeOrder` and `createMarketOrder` do not accept it.
 
 This guard reduces accidental immediate executions but cannot guarantee a resting order. Binance documents quotes as potentially approximately five seconds old, and the market may move between checking and submission. The Stocks placement API does not document a post-only option. See [Latest Quote](https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/market-data#latest-quote-market_data) and [Place Equity Order](https://developers.binance.com/en/docs/catalog/advanced-trading-stocks-trading/api/rest-api/trade#place-equity-order-trade).
 
@@ -108,21 +109,21 @@ const ack = await client.createLimitOrder({
 })
 ```
 
-`createMarketOrder({ symbol, amountInUSD, maxSpreadPercent, ...commonOptions })`
+`createMarketOrder({ symbol, amountInUSD, maxSpreadPercent = 2, ...commonOptions })`
 
-A BUY sends `amountInUSD` as decimal-string `notional`, without deriving quantity; it fetches a quote only when `maxSpreadPercent` is set. A SELL fetches one current quote and sizes down using its valid positive `bidPrice` and the symbol step size. Missing or invalid bids reject SELL sizing. When present, `quote.symbol` must be a nonempty string matching the order symbol after trimming and uppercasing; invalid or mismatched symbols reject before submission. The method rejects `price`, `entryPrice`, `tradingSession`, `quantity`, `notional`, and GTC. Market requests have no session field; session-specific fractional acceptance is left to Binance.
+A BUY sends `amountInUSD` as decimal-string `notional`, without deriving quantity. Both sides fetch one quote for the required spread check. A SELL reuses that quote to size down using its valid positive `bidPrice` and the symbol step size. Missing or invalid bids reject SELL sizing. When present, `quote.symbol` must be a nonempty string matching the order symbol after trimming and uppercasing; invalid or mismatched symbols reject before submission. The method rejects `price`, `entryPrice`, `tradingSession`, `quantity`, `notional`, and GTC. Market requests have no session field; session-specific fractional acceptance is left to Binance.
 
 ```js
 const ack = await client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 100, maxSpreadPercent: 0.1 })
 ```
 
-Both monetary methods accept `maxSpreadPercent` for BUY and SELL: a finite nonnegative JavaScript number (`0.1` means 0.1%). Omitted or `undefined` disables it; `null` and numeric strings are invalid. Before submission, reject when `200 × (askPrice − bidPrice) / (askPrice + bidPrice) > maxSpreadPercent`, using exact decimals. Equality passes; `0` requires equal bid and ask. Missing, invalid, nonpositive or crossed prices, an invalid/mismatched quote symbol when present, or a failed quote request also reject. The guard reuses the SELL sizing quote or the LIMIT `rejectMarketable` quote; otherwise it fetches one after sizing and rule validation. It never changes sizing or prices, retries, or sends `maxSpreadPercent` to Binance. Direct `placeOrder` does not accept it. This checks the quoted spread, not execution slippage or fair value.
+`createLimitOrder`, `createMarketOrder`, `placeOrder`, and `sellPositions` always enforce `maxSpreadPercent`, default `2` (2%); `0.1` means 0.1%. Omission and `undefined` use the default. Zero, `null`, strings, `NaN`, infinities, and numbers outside `0 < maxSpreadPercent <= 2` are rejected. Before submission, reject when `200 × (askPrice − bidPrice) / (askPrice + bidPrice) > maxSpreadPercent`, using exact decimals. Equality passes, including exactly 2% at the default. Missing, invalid, nonpositive or crossed prices, an invalid/mismatched quote symbol when present, or a failed quote request also reject. Each order uses one quote, shared with SELL sizing or LIMIT `rejectMarketable` checks. Quote validation failures reach `errorLogger` and reject without submission or automatic retry. The guard never changes sizing or prices or sends `maxSpreadPercent` to Binance. Raw `apiClient('placeOrder', ...)` calls are rejected; use a placement method. This checks the quoted spread, not quote age, market hours, available size, execution slippage or fair value.
 
 The monetary helpers never send `amountInUSD` or `entryPrice` to Binance. Final spend or proceeds may differ because of rounding, fees, and execution price. These helpers do not use the equity wallet to authorize or resize a SELL; `sellPositions` uses it as the source of positions and quantities.
 
 ### Explicit placement
 
-`placeOrder({ symbol, orderType, ...fields, ...commonOptions })`
+`placeOrder({ symbol, orderType, maxSpreadPercent = 2, ...fields, ...commonOptions })`
 
 | Combination | Required fields | Forbidden fields |
 | --- | --- | --- |
@@ -149,7 +150,7 @@ On a placement transport or response error, the propagated Error retains its typ
 
 Uses one `getEquityWallet()` call with its default history window as the source of truth for positions and quantities. Pass explicit `null` to target every wallet position, or an array of plain `{ symbol }` objects to target only those symbols. Symbols are trimmed, uppercased, and deduplicated in first-occurrence order. Unsupported fields are rejected using the same options rules as other methods. Missing arguments, `undefined`, and malformed entries reject before any API calls. An empty array returns `[]` without API calls.
 
-Each selected position is submitted sequentially through `placeOrder({ symbol, side: 'SELL', orderType: 'MARKET', quantity: position.amount })`. The decimal-string amount is passed unchanged; there is no quote lookup, USD sizing, rounding, or splitting. Existing placement defaults and validations apply, including `USDC`, `DAY`, exact step increments, and quantity bounds. Binance validates the execution notional.
+Each selected position is submitted sequentially through `placeOrder({ symbol, side: 'SELL', orderType: 'MARKET', quantity: position.amount })`, including the required 2% spread check. The decimal-string amount is passed unchanged; the quote validates the spread without USD sizing, rounding, or splitting. Existing placement defaults and validations apply, including `USDC`, `DAY`, exact step increments, and quantity bounds. Binance validates the execution notional. Spread failures are returned as per-position errors and processing continues.
 
 ```js
 const results = await client.sellPositions(null)
