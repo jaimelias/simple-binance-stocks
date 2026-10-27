@@ -29,7 +29,7 @@ export default class BinanceStocksCore {
     this.API_SECRET = options.API_SECRET;
   }
 
-  getNyMarketSession(date) {
+  static getNyMarketSession(date) {
     return getNyMarketSession(date);
   }
 
