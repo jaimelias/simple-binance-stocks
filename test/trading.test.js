@@ -11,7 +11,8 @@ const rules = () => ({
   extendedSession: true, overnightSupported: true
 })
 const fill = (id, extra = {}) => ({
-  executionId: `fill-${id}`, orderId: 'same-order', symbol: 'AAPL', quote: 'USDC', side: 'BUY', qty: '0.01', ...extra
+  executionId: `fill-${id}`, orderId: 'same-order', symbol: 'AAPL', quote: 'USDC', side: 'BUY',
+  qty: '0.01', price: '3', executionAt: id, ...extra
 })
 const page = (rows, current = 1, total = rows.length) => ({ total, page: current, size: 100, rows })
 const limit = extra => ({ symbol: 'aapl', amountInUSD: 10, entryPrice: '3.00', tradingSession: 'RTH', ...extra })
@@ -371,7 +372,7 @@ for (const Client of [NodeClient, GasClient]) {
       assert.ok(errors.includes(error))
     }
     assert.equal(generated, 0)
-    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, placementOrders.length * 2 + 2)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, placementOrders.length * 2 + 4)
     assert.equal(calls.filter(call => call.method === 'POST').length, 0)
   })
 
@@ -562,7 +563,8 @@ for (const Client of [NodeClient, GasClient]) {
       { symbol: 'NVDA', quantity: '2.1', ack: state.placement }
     ])
     assert.deepEqual(calls.map(call => call.path.replace('/sapi/v1/equity/', '')), [
-      'trade/history', 'market/exchangeInfo', 'market/quote', 'order/place', 'market/exchangeInfo', 'market/quote', 'order/place'
+      'trade/history', 'market/quote', 'market/quote',
+      'market/exchangeInfo', 'market/quote', 'order/place', 'market/exchangeInfo', 'market/quote', 'order/place'
     ])
     const orders = calls.filter(call => call.path.endsWith('/place'))
     for (const { payload } of orders) {
@@ -720,15 +722,19 @@ for (const Client of [NodeClient, GasClient]) {
 
   check('wallet scans complete fixed sequential pages and tolerates sell-first traversal', async ({ client, calls, state }) => {
     const rows = Array.from({ length: 100 }, (_, i) => fill(i))
-    rows[0] = fill(0, { side: 'SELL', qty: '2' })
+    rows[0] = fill(0, { side: 'SELL', qty: '2', executionAt: 100 })
     rows[1] = fill(1, { qty: '3' })
     state.handler = call => call.path.endsWith('/trade/history')
-      ? page(call.payload.current === '1' ? rows : [fill(100, { qty: '0.02' })], Number(call.payload.current), 101)
+      ? page(call.payload.current === '1' ? rows : [fill(100, { qty: '0.02', executionAt: 0 })], Number(call.payload.current), 101)
       : undefined
-    assert.deepEqual(await client.getEquityWallet({ startTime: 0, endTime: 100, recvWindow: 10000 }), { AAPL: { amount: '2' } })
-    assert.deepEqual(calls.map(call => call.payload.current), ['1', '2'])
-    assert.ok(calls.every(call => call.payload.endTime === '100' && call.payload.recvWindow === '10000' && call.payload.size === '100'))
-    assert.ok(calls.every(call => call.payload.side === undefined && call.payload.symbol === undefined))
+    assert.deepEqual(await client.getEquityWallet({ startTime: 0, endTime: 100, recvWindow: 10000 }), {
+      AAPL: { amount: '2', costBasisUsd: '6', unrealizedPnlUsd: '0', unrealizedPnlPercent: '0' }
+    })
+    const history = calls.filter(call => call.path.endsWith('/trade/history'))
+    assert.deepEqual(history.map(call => call.payload.current), ['1', '2'])
+    assert.ok(history.every(call => call.payload.endTime === '100' && call.payload.recvWindow === '10000' && call.payload.size === '100'))
+    assert.ok(history.every(call => call.payload.side === undefined && call.payload.symbol === undefined))
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 1)
   })
 
   check('duplicate fills cannot hide incomplete history from wallet, portfolio or sellPositions', async ({ client, calls, state }) => {
@@ -763,7 +769,9 @@ for (const Client of [NodeClient, GasClient]) {
     }
     state.handler = undefined
     for (const row of [fill(0, { executionId: '' }), fill(0, { side: 'BAD' }), fill(0, { qty: 1 }),
-      fill(0, { qty: '0' }), fill(0, { symbol: '' }), fill(0, { quote: 'USDT' })]) {
+      fill(0, { qty: '0' }), fill(0, { symbol: '' }), fill(0, { quote: 'USDT' }),
+      ...[undefined, null, 3, '0', '-1', 'bad'].map(price => fill(0, { price })),
+      ...[undefined, null, -1, 0.5, '1', Number.MAX_SAFE_INTEGER + 1].map(executionAt => fill(0, { executionAt }))]) {
       state.trades = page([row])
       await assert.rejects(client.getEquityWallet())
     }
@@ -795,25 +803,122 @@ for (const Client of [NodeClient, GasClient]) {
     }
   })
 
+  check('replays weighted average costs across partial sells and resets closed positions', async ({ client, calls, state }) => {
+    state.trades = page([
+      fill(0, { qty: '2', price: '100' }),
+      fill(1, { qty: '2', price: '200' }),
+      fill(2, { side: 'SELL', qty: '1', price: '500' }),
+      fill(3, { qty: '1', price: '150' }),
+      fill(4, { side: 'SELL', qty: '1', price: '5' }),
+      fill(5, { symbol: 'MSFT', qty: '1', price: '10' }),
+      fill(6, { symbol: 'MSFT', side: 'SELL', qty: '1', price: '12' }),
+      fill(7, { symbol: 'NVDA', qty: '1', price: '100' }),
+      fill(8, { symbol: 'NVDA', side: 'SELL', qty: '1', price: '400' }),
+      fill(9, { symbol: 'NVDA', qty: '3', price: '250' })
+    ].reverse())
+    state.handler = call => call.path.endsWith('/quote')
+      ? { symbol: call.payload.symbol, bidPrice: call.payload.symbol === 'NVDA' ? '300' : '200' } : undefined
+    const wallet = await client.getEquityWallet()
+    assert.deepEqual(wallet, {
+      AAPL: { amount: '3', costBasisUsd: '450', unrealizedPnlUsd: '150', unrealizedPnlPercent: '33.333333333333333333333333' },
+      NVDA: { amount: '3', costBasisUsd: '750', unrealizedPnlUsd: '150', unrealizedPnlPercent: '20' }
+    })
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 2)
+    calls.length = 0
+    state.funding = [{ asset: 'USDC', free: '10000', locked: '0', freeze: '0', withdrawing: '0' }]
+    const portfolio = await client.getPortfolio()
+    assert.deepEqual(portfolio.totals, {
+      totalUsd: 11500, positionsUsd: 1500, cashUsd: 10000, unrealizedPnlUsd: 300, unrealizedPnlPercent: 25
+    })
+    assert.equal(portfolio.positions.AAPL.costBasisUsd, 450)
+    assert.equal(portfolio.positions.AAPL.unrealizedPnlPercent, 33.333333333333336)
+    assert.equal(portfolio.positions.NVDA.unrealizedPnlUsd, 150)
+    assert.equal(portfolio.positions.MSFT, undefined)
+    assert.equal(calls.filter(call => call.path.endsWith('/trade/history')).length, 1)
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 2)
+  })
+
+  check('reports signed decimal losses and combines gains with losses before computing global PnL', async ({ client, state }) => {
+    state.trades = page([
+      fill(0, { qty: '0.3', price: '0.1' }),
+      fill(1, { symbol: 'MSFT', qty: '0.3', price: '0.1' })
+    ])
+    state.handler = call => call.path.endsWith('/quote')
+      ? { bidPrice: call.payload.symbol === 'AAPL' ? '0.08' : '0.12' } : undefined
+    assert.deepEqual(await client.getEquityWallet(), {
+      AAPL: { amount: '0.3', costBasisUsd: '0.03', unrealizedPnlUsd: '-0.006', unrealizedPnlPercent: '-20' },
+      MSFT: { amount: '0.3', costBasisUsd: '0.03', unrealizedPnlUsd: '0.006', unrealizedPnlPercent: '20' }
+    })
+    const portfolio = await client.getPortfolio()
+    assert.equal(portfolio.positions.AAPL.unrealizedPnlUsd, -0.006)
+    assert.equal(portfolio.positions.AAPL.unrealizedPnlPercent, -20)
+    assert.equal(portfolio.totals.unrealizedPnlUsd, 0)
+    assert.equal(portfolio.totals.unrealizedPnlPercent, 0)
+    state.handler = undefined
+    state.quote = { bidPrice: '0.08' }
+    assert.deepEqual((await client.getPortfolio()).totals, {
+      totalUsd: 0.048, positionsUsd: 0.048, cashUsd: 0, unrealizedPnlUsd: -0.012, unrealizedPnlPercent: -20
+    })
+  })
+
+  check('preserves valuations but nulls unknown costs and global PnL for insufficient or ambiguous fill order', async ({ client, state }) => {
+    for (const executionAt of [0, 1]) {
+      state.trades = page([
+        fill(0, { side: 'SELL', qty: '1', executionAt }),
+        fill(1, { qty: '2' }),
+        fill(2, { symbol: 'MSFT', qty: '1' })
+      ])
+      const wallet = await client.getEquityWallet()
+      assert.deepEqual(wallet.AAPL, {
+        amount: '1', costBasisUsd: null, unrealizedPnlUsd: null, unrealizedPnlPercent: null
+      })
+      const portfolio = await client.getPortfolio()
+      assert.deepEqual(portfolio.positions.AAPL, {
+        amount: 1, quote: 3, usd: 3, weight: 0.5,
+        costBasisUsd: null, unrealizedPnlUsd: null, unrealizedPnlPercent: null
+      })
+      assert.deepEqual(portfolio.totals, {
+        totalUsd: 6, positionsUsd: 6, cashUsd: 0, unrealizedPnlUsd: null, unrealizedPnlPercent: null
+      })
+      assert.equal(portfolio.positions.MSFT.unrealizedPnlUsd, 0)
+    }
+  })
+
+  check('wallet retains known costs without bids and propagates quote failures', async ({ client, state }) => {
+    state.trades = page([fill(0, { qty: '1' })])
+    for (const quote of [null, {}, { bidPrice: '0' }, { bidPrice: '-1' }, { bidPrice: 'bad' },
+      { symbol: 'MSFT', bidPrice: '3' }]) {
+      state.quote = quote
+      assert.deepEqual(await client.getEquityWallet(), {
+        AAPL: { amount: '1', costBasisUsd: '3', unrealizedPnlUsd: null, unrealizedPnlPercent: null }
+      })
+    }
+    state.handler = call => call.path.endsWith('/quote') ? { httpStatus: 503, rawBody: 'unavailable' } : undefined
+    await assert.rejects(client.getEquityWallet(), /503/)
+  })
+
   check('portfolio computes exact values, four-place weights and all-cash/empty reports', async ({ client, state, calls }) => {
-    state.trades = page([fill(0, { qty: '3', symbol: 'NVDA' })])
+    state.trades = page([fill(0, { qty: '3', symbol: 'NVDA', price: '250' })])
     state.quote = { bidPrice: '300' }
     state.funding = [{ asset: 'USDC', free: '5900', locked: '5', freeze: '0', withdrawing: '0' }]
     assert.deepEqual(await client.getPortfolio({ startTime: 1, endTime: 5, recvWindow: 20000 }), {
-      totals: { totalUsd: 6805, positionsUsd: 900, cashUsd: 5905 },
+      totals: { totalUsd: 6805, positionsUsd: 900, cashUsd: 5905, unrealizedPnlUsd: 150, unrealizedPnlPercent: 20 },
       cash: { USDC: { amount: 5905, quote: 1, usd: 5905, weight: 0.8677 } },
-      positions: { NVDA: { amount: 3, quote: 300, usd: 900, weight: 0.1323 } }
+      positions: { NVDA: { amount: 3, quote: 300, usd: 900, weight: 0.1323,
+        costBasisUsd: 750, unrealizedPnlUsd: 150, unrealizedPnlPercent: 20 } }
     })
     assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 1)
     assert.equal(calls[0].payload.startTime, '1')
-    assert.equal(calls[1].payload.recvWindow, '20000')
+    assert.equal(calls.find(call => call.path.endsWith('/get-funding-asset')).payload.recvWindow, '20000')
     state.trades = page([])
     const cashOnly = await client.getPortfolio()
     assert.equal(cashOnly.cash.USDC.weight, 1)
     assert.deepEqual(cashOnly.positions, {})
+    assert.equal(cashOnly.totals.unrealizedPnlUsd, 0)
+    assert.equal(cashOnly.totals.unrealizedPnlPercent, null)
     state.funding = []
     assert.deepEqual(await client.getPortfolio(), {
-      totals: { totalUsd: 0, positionsUsd: 0, cashUsd: 0 },
+      totals: { totalUsd: 0, positionsUsd: 0, cashUsd: 0, unrealizedPnlUsd: 0, unrealizedPnlPercent: null },
       cash: { USDC: { amount: 0, quote: 1, usd: 0, weight: null } }, positions: {}
     })
     state.trades = page([fill(0, { qty: '1' })])
@@ -828,9 +933,12 @@ for (const Client of [NodeClient, GasClient]) {
     for (const quote of [null, {}, { bidPrice: '0' }, { bidPrice: '-1' }, { bidPrice: 'bad' }]) {
       state.handler = call => call.path.endsWith('/quote') && call.payload.symbol === 'AAPL' ? quote : undefined
       const report = await client.getPortfolio()
-      assert.deepEqual(report.totals, { totalUsd: null, positionsUsd: null, cashUsd: 10 })
-      assert.deepEqual(report.positions.AAPL, { amount: 1, quote: null, usd: null, weight: null })
-      assert.deepEqual(report.positions.MSFT, { amount: 2, quote: 3, usd: 6, weight: null })
+      assert.deepEqual(report.totals, { totalUsd: null, positionsUsd: null, cashUsd: 10,
+        unrealizedPnlUsd: null, unrealizedPnlPercent: null })
+      assert.deepEqual(report.positions.AAPL, { amount: 1, quote: null, usd: null, weight: null,
+        costBasisUsd: 3, unrealizedPnlUsd: null, unrealizedPnlPercent: null })
+      assert.deepEqual(report.positions.MSFT, { amount: 2, quote: 3, usd: 6, weight: null,
+        costBasisUsd: 6, unrealizedPnlUsd: 0, unrealizedPnlPercent: 0 })
       assert.equal(report.cash.USDC.weight, null)
       await assert.rejects(client.createMarketOrder({ symbol: 'AAPL', amountInUSD: 10, side: 'SELL' }), /bidPrice/)
     }
@@ -848,15 +956,19 @@ for (const Client of [NodeClient, GasClient]) {
         ? { symbol, bidPrice: '10' } : undefined
       await assert.rejects(client.createMarketOrder({ symbol: 'AAPL', side: 'SELL', amountInUSD: 100 }), /symbol/)
       const report = await client.getPortfolio()
-      assert.deepEqual(report.totals, { totalUsd: null, positionsUsd: null, cashUsd: 10 })
-      assert.deepEqual(report.positions.AAPL, { amount: 1, quote: null, usd: null, weight: null })
-      assert.deepEqual(report.positions.MSFT, { amount: 2, quote: 3, usd: 6, weight: null })
+      assert.deepEqual(report.totals, { totalUsd: null, positionsUsd: null, cashUsd: 10,
+        unrealizedPnlUsd: null, unrealizedPnlPercent: null })
+      assert.deepEqual(report.positions.AAPL, { amount: 1, quote: null, usd: null, weight: null,
+        costBasisUsd: 3, unrealizedPnlUsd: null, unrealizedPnlPercent: null })
+      assert.deepEqual(report.positions.MSFT, { amount: 2, quote: 3, usd: 6, weight: null,
+        costBasisUsd: 6, unrealizedPnlUsd: 0, unrealizedPnlPercent: 0 })
       assert.equal(report.cash.USDC.weight, null)
     }
     assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
     state.handler = call => call.path.endsWith('/quote') && call.payload.symbol === 'AAPL'
       ? { symbol: ' aapl ', bidPrice: '10', askPrice: '10.01' } : undefined
-    assert.deepEqual((await client.getPortfolio()).totals, { totalUsd: 26, positionsUsd: 16, cashUsd: 10 })
+    assert.deepEqual((await client.getPortfolio()).totals, { totalUsd: 26, positionsUsd: 16, cashUsd: 10,
+      unrealizedPnlUsd: 7, unrealizedPnlPercent: 77.77777777777777 })
     await client.createMarketOrder({ symbol: 'AAPL', side: 'SELL', amountInUSD: 100 })
     const orders = calls.filter(call => call.path.endsWith('/place'))
     assert.equal(orders.length, 1)
@@ -878,4 +990,13 @@ test('decimal sizing retains tiny and scientific numeric inputs without binary d
   assert.equal(new Decimal(1e-7).toString(), '0.0000001')
   assert.equal(new Decimal(1e21).toString(), '1000000000000000000000')
   assert.equal(new Decimal(0.3).divToInt(new Decimal(0.1).times('0.1')).times('0.1').toString(), '3')
+})
+
+test('decimal report division rounds half up and preserves tiny nonzero cost bases', () => {
+  assert.equal(new Decimal('2').div('3').toString(), '0.666666666666666666666667')
+  assert.equal(new Decimal('1').div('6').toString(), '0.166666666666666666666667')
+  assert.equal(new Decimal('0.03').div('0.3').toString(), '0.1')
+  assert.equal(new Decimal('1000000000000000000000000000000.25').div('2').toString(), '500000000000000000000000000000.125')
+  assert.equal(new Decimal('0.000000000000000000000000000001').div('2').toString(), '0.0000000000000000000000000000005')
+  assert.throws(() => new Decimal('1').div('0'), /zero/)
 })

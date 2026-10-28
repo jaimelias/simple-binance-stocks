@@ -1,6 +1,8 @@
 import Decimal from '../utilities/decimal.js'
-import { publicOptions, decimalValue, reportNumber, normalizeSymbol } from '../utilities/publicInputs.js'
+import { publicOptions, decimalValue, reportNumber } from '../utilities/publicInputs.js'
 import { tradeHistory } from '../utilities/endpointAsserts.js'
+import { getEquitySnapshot } from './getEquityWallet.js'
+import { unrealizedPnl } from '../utilities/unrealizedPnl.js'
 
 /** Round a value's weight to four decimal places with exact half-up ties. */
 const weight = (value, total) => {
@@ -17,7 +19,7 @@ export const getPortfolio = async (main, options = {}) => {
   const window = { startTime: 0, ...input }
   if (window.endTime === undefined) window.endTime = Date.now()
   tradeHistory(window)
-  const equity = await main.getEquityWallet(window)
+  const equity = await getEquitySnapshot(main, window)
   const funding = await main.getFundingWallet({ recvWindow: window.recvWindow })
   const cashValue = decimalValue(funding.USDC.amount, 'cash.amount', { positive: false, stringOnly: true })
   const cashNumber = reportNumber(cashValue)
@@ -25,28 +27,26 @@ export const getPortfolio = async (main, options = {}) => {
   const positions = {}
   const values = new Map()
   let positionsValue = new Decimal('0')
+  let costBasis = new Decimal('0')
+  let basisComplete = true
   let complete = true
-  for (const [symbol, position] of Object.entries(equity)) {
-    const amount = decimalValue(position.amount, 'position.amount', { positive: false, stringOnly: true })
-    if (amount.isZero()) continue
-    const entry = { amount: reportNumber(amount), quote: null, usd: null, weight: null }
+  for (const [symbol, position] of equity) {
+    const entry = {
+      amount: reportNumber(position.amount), quote: null, usd: null, weight: null,
+      costBasisUsd: position.costBasis === null ? null : reportNumber(position.costBasis),
+      ...unrealizedPnl(position.value, position.costBasis, true)
+    }
     positions[symbol] = entry
-    const quote = await main.getQuote(symbol)
-    let bid
-    try {
-      if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== symbol) {
-        throw new TypeError('quote.symbol does not match the position symbol')
-      }
-      bid = decimalValue(quote?.bidPrice, 'quote.bidPrice')
-    } catch {
+    if (position.costBasis === null) basisComplete = false
+    else costBasis = costBasis.plus(position.costBasis)
+    if (position.value === null) {
       complete = false
       continue
     }
-    const value = amount.times(bid)
-    entry.quote = reportNumber(bid)
-    entry.usd = reportNumber(value)
-    values.set(symbol, value)
-    positionsValue = positionsValue.plus(value)
+    entry.quote = reportNumber(position.bid)
+    entry.usd = reportNumber(position.value)
+    values.set(symbol, position.value)
+    positionsValue = positionsValue.plus(position.value)
   }
   const total = positionsValue.plus(cashValue)
   if (complete) {
@@ -57,7 +57,8 @@ export const getPortfolio = async (main, options = {}) => {
     totals: {
       totalUsd: complete ? reportNumber(total) : null,
       positionsUsd: complete ? reportNumber(positionsValue) : null,
-      cashUsd: cashNumber
+      cashUsd: cashNumber,
+      ...unrealizedPnl(complete ? positionsValue : null, basisComplete ? costBasis : null, true)
     },
     cash,
     positions

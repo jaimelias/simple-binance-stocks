@@ -187,7 +187,7 @@ const getNyDayStart = calendarMs => {
 
 /**
  * Creates one market occurrence using UTC-based timestamps and
- * UTC opening hour/minute values.
+ * UTC opening and closing hour/minute values.
  *
  * @param {number} dayStart Absolute timestamp for NY-local midnight.
  * @param {number} openOffset Milliseconds after NY midnight when it opens.
@@ -198,7 +198,9 @@ const getNyDayStart = calendarMs => {
  *   closesAt: number,
  *   timeToOpen: number,
  *   openHour: number,
- *   openMinute: number
+ *   openMinute: number,
+ *   closeHour: number,
+ *   closeMinute: number
  * }}
  */
 const createMarketOccurrence = (
@@ -208,14 +210,18 @@ const createMarketOccurrence = (
   timeToOpen
 ) => {
   const opensAt = dayStart + openOffset
+  const closesAt = dayStart + closeOffset
   const utcTime = opensAt % DAY_IN_MS
+  const utcCloseTime = closesAt % DAY_IN_MS
 
   return {
     opensAt,
-    closesAt: dayStart + closeOffset,
+    closesAt,
     timeToOpen,
     openHour: Math.floor(utcTime / HOUR_IN_MS),
     openMinute: Math.floor((utcTime % HOUR_IN_MS) / MINUTE_IN_MS),
+    closeHour: Math.floor(utcCloseTime / HOUR_IN_MS),
+    closeMinute: Math.floor((utcCloseTime % HOUR_IN_MS) / MINUTE_IN_MS),
   }
 }
 
@@ -283,7 +289,7 @@ const createMarketState = (
 
 /**
  * Returns New York equity trading-session information using UTC-based
- * timestamps, UTC openHour/openMinute values, and DST-aware calculations.
+ * timestamps, UTC opening/closing hours and minutes, and DST-aware calculations.
  *
  * Sessions:
  * - preMarket:     04:00–09:30 America/New_York

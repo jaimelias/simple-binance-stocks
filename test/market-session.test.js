@@ -50,12 +50,15 @@ const assertClosedOccurrences = (instant, previousMidnight, nextMidnight, isHoli
     assert.equal(window.isOpen, false, name)
     for (const [key, midnight] of [['last', previousMidnight], ['next', nextMidnight]]) {
       const opensAt = Date.parse(midnight) + open * HOUR_IN_MS
+      const closesAt = Date.parse(midnight) + close * HOUR_IN_MS
       assert.deepEqual(window[key], {
         opensAt,
-        closesAt: Date.parse(midnight) + close * HOUR_IN_MS,
+        closesAt,
         timeToOpen: key === 'last' ? 0 : opensAt - now,
         openHour: new Date(opensAt).getUTCHours(),
         openMinute: new Date(opensAt).getUTCMinutes(),
+        closeHour: new Date(closesAt).getUTCHours(),
+        closeMinute: new Date(closesAt).getUTCMinutes(),
       }, `${name}.${key}`)
     }
   }

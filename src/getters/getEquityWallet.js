@@ -1,6 +1,7 @@
 import Decimal from '../utilities/decimal.js'
 import { publicOptions, normalizeSymbol, decimalValue } from '../utilities/publicInputs.js'
 import { tradeHistory } from '../utilities/endpointAsserts.js'
+import { unrealizedPnl } from '../utilities/unrealizedPnl.js'
 
 /** Compare complete JSON rows independently of object property order. */
 const canonicalRow = (value) => {
@@ -11,8 +12,31 @@ const canonicalRow = (value) => {
   return JSON.stringify(value)
 }
 
-/** Aggregate a complete fixed-window fill history into a nonnegative holding estimate. */
-export const getEquityWallet = async (main, options = {}) => {
+/** Reconstruct moving weighted average cost from chronologically ordered fills. */
+const remainingCost = fills => {
+  fills.sort((left, right) => left.executionAt - right.executionAt)
+  let amount = new Decimal('0')
+  let cost = new Decimal('0')
+  for (let i = 0; i < fills.length; i++) {
+    const fill = fills[i]
+    if (i > 0 && fill.executionAt === fills[i - 1].executionAt && fill.side !== fills[i - 1].side) {
+      return null
+    }
+    if (fill.side === 'BUY') {
+      amount = amount.plus(fill.quantity)
+      cost = cost.plus(fill.quantity.times(fill.price))
+    } else {
+      if (fill.quantity.gt(amount)) return null
+      const remaining = amount.minus(fill.quantity)
+      cost = remaining.isZero() ? new Decimal('0') : cost.times(remaining).div(amount)
+      amount = remaining
+    }
+  }
+  return cost
+}
+
+/** Internal shared snapshot: complete fill history, remaining basis, and one bid per position. */
+export const getEquitySnapshot = async (main, options = {}) => {
   const input = publicOptions(options, ['startTime', 'endTime', 'recvWindow'])
   const window = { startTime: 0, ...input }
   if (window.endTime === undefined) window.endTime = Date.now()
@@ -40,14 +64,19 @@ export const getEquityWallet = async (main, options = {}) => {
       }
       const symbol = normalizeSymbol(row.symbol)
       const quantity = decimalValue(row.qty, 'trade.qty', { stringOnly: true })
+      const price = decimalValue(row.price, 'trade.price', { stringOnly: true })
+      if (!Number.isSafeInteger(row.executionAt) || row.executionAt < 0) {
+        throw new TypeError('trade.executionAt must be a nonnegative safe integer')
+      }
       const fingerprint = canonicalRow(row)
       if (executions.has(row.executionId)) {
         if (executions.get(row.executionId) !== fingerprint) throw new Error('Conflicting rows for the same executionId')
         continue
       }
       executions.set(row.executionId, fingerprint)
-      const balance = totals.get(symbol) ?? { BUY: new Decimal('0'), SELL: new Decimal('0') }
+      const balance = totals.get(symbol) ?? { BUY: new Decimal('0'), SELL: new Decimal('0'), fills: [] }
       balance[row.side] = balance[row.side].plus(quantity)
+      balance.fills.push({ quantity, price, side: row.side, executionAt: row.executionAt })
       totals.set(symbol, balance)
     }
     if (expectedTotal > 0 && executions.size === previousCount) {
@@ -59,13 +88,39 @@ export const getEquityWallet = async (main, options = {}) => {
   if (executions.size !== expectedTotal) {
     throw new Error('Incomplete trade history: distinct execution count does not match total')
   }
-  const wallet = {}
+  const positions = new Map()
   for (const [symbol, balance] of totals) {
     if (balance.SELL.gt(balance.BUY)) {
       throw new RangeError(`The selected trade window cannot establish a nonnegative holding estimate for ${symbol}`)
     }
     const amount = balance.BUY.minus(balance.SELL)
-    if (!amount.isZero()) wallet[symbol] = { amount: amount.toString() }
+    if (!amount.isZero()) positions.set(symbol, { amount, costBasis: remainingCost(balance.fills), bid: null, value: null })
+  }
+  for (const [symbol, position] of positions) {
+    const quote = await main.getQuote(symbol)
+    try {
+      if (quote?.symbol !== undefined && normalizeSymbol(quote.symbol) !== symbol) {
+        throw new TypeError('quote.symbol does not match the position symbol')
+      }
+      position.bid = decimalValue(quote?.bidPrice, 'quote.bidPrice')
+      position.value = position.amount.times(position.bid)
+    } catch {
+      // A successful response without a matching positive bid leaves this position unpriced.
+    }
+  }
+  return positions
+}
+
+/** Return estimated holdings and current bid-based PnL as decimal strings. */
+export const getEquityWallet = async (main, options = {}) => {
+  const positions = await getEquitySnapshot(main, options)
+  const wallet = {}
+  for (const [symbol, position] of positions) {
+    wallet[symbol] = {
+      amount: position.amount.toString(),
+      costBasisUsd: position.costBasis?.toString() ?? null,
+      ...unrealizedPnl(position.value, position.costBasis)
+    }
   }
   return wallet
 }

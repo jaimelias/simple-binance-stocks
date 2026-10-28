@@ -162,6 +162,18 @@ export default class Decimal {
     return fromParts(multiplyIntegers(this.digits, right.digits), this.scale + right.scale);
   }
 
+  // Half-up division to 24 decimal places, extended for tiny quotients to retain 24 significant digits.
+  div(value) {
+    const right = new Decimal(value);
+    const scale = Math.max(24, 24 + this.scale - this.digits.length + right.digits.length - right.scale);
+    const operands = aligned(this, right);
+    let { quotient, remainder } = divideIntegers(operands.left + '0'.repeat(scale), operands.right);
+    if (compareIntegers(multiplyIntegers(remainder, '2'), operands.right) >= 0) {
+      quotient = addIntegers(quotient, '1');
+    }
+    return fromParts(quotient, scale);
+  }
+
   divToInt(value) {
     const right = new Decimal(value);
     const operands = aligned(this, right);

@@ -71,7 +71,7 @@ export default class BinanceStocksCore {
   /** Return one raw page of fills for the required time window. */
   async getTradeHistory(options) { return getTradeHistory(this, options) }
 
-  /** Estimate equity holdings from every page of fills in a fixed window. */
+  /** Estimate equity holdings, remaining cost basis, and current bid-based PnL. */
   async getEquityWallet(options = {}) { return getEquityWallet(this, options) }
 
   /** Read the USDC Funding Wallet, including locked funds. */

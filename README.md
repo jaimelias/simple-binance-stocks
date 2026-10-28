@@ -59,6 +59,7 @@ Each window's `isOpen` is boolean: opening inclusive, closing exclusive. `last` 
 | `opensAt`, `closesAt` | Numeric Unix timestamps in milliseconds. |
 | `timeToOpen` | Milliseconds until opening for `next`; always `0` for `last`. |
 | `openHour`, `openMinute` | Numeric UTC opening hour and minute for that occurrence, accounting for DST. |
+| `closeHour`, `closeMinute` | Numeric UTC closing hour and minute for that occurrence, accounting for DST. |
 
 Weekends and holidays return `'closed'` with every `isOpen: false`. Uses modern recurring NYSE holidays; excludes early closes and ad-hoc closures. No network calls or order authorization.
 
@@ -150,6 +151,8 @@ On a placement transport or response error, the propagated Error retains its typ
 
 Uses one `getEquityWallet()` call with its default history window as the source of truth for positions and quantities. Pass explicit `null` to target every wallet position, or an array of plain `{ symbol }` objects to target only those symbols. Symbols are trimmed, uppercased, and deduplicated in first-occurrence order. Unsupported fields are rejected using the same options rules as other methods. Missing arguments, `undefined`, and malformed entries reject before any API calls. An empty array returns `[]` without API calls.
 
+The wallet call also fetches a current quote for every nonzero wallet position to estimate PnL, including symbols outside the selection. A failed history or wallet quote request rejects before any sells are submitted. Each selected order still obtains its own fresh spread-check quote.
+
 Each selected position is submitted sequentially through `placeOrder({ symbol, side: 'SELL', orderType: 'MARKET', quantity: position.amount })`, including the required 2% spread check. The decimal-string amount is passed unchanged; the quote validates the spread without USD sizing, rounding, or splitting. Existing placement defaults and validations apply, including `USDC`, `DAY`, exact step increments, and quantity bounds. Binance validates the execution notional. Spread failures are returned as per-position errors and processing continues.
 
 ```js
@@ -208,14 +211,23 @@ The request field is `current`; the response field is `page`. Both methods retur
 
 `getEquityWallet({ startTime = 0, endTime = Date.now(), recvWindow } = {})`
 
-Fetches all sequential trade-history pages with `size: 100`, without symbol or side filters. The end time is captured once. Pagination metadata must match the requested page and size and a stable total; incomplete, repeated, nonadvancing, inconsistent, malformed, or failed pages reject the operation rather than return a partial estimate. Identical complete rows are deduplicated by `executionId`; conflicting rows sharing an ID are rejected. The final distinct execution count must equal the reported total, so duplicate rows cannot conceal missing fills. BUY and SELL totals are aggregated exactly before subtraction. Zero final holdings are omitted.
+Fetches all sequential trade-history pages with `size: 100`, without symbol or side filters, then one current quote per nonzero estimated position. The end time is captured once. Pagination metadata must match the requested page and size and a stable total; incomplete, repeated, nonadvancing, inconsistent, malformed, or failed pages reject the operation rather than return a partial estimate. Identical complete rows are deduplicated by `executionId`; conflicting rows sharing an ID are rejected. The final distinct execution count must equal the reported total, so duplicate rows cannot conceal missing fills. Each fill requires positive decimal-string `qty` and `price`, and a nonnegative safe integer `executionAt`. BUY and SELL totals are aggregated exactly before subtraction. Zero final holdings are omitted.
+
+All available wallet values are decimal strings. `costBasisUsd` is the remaining acquisition cost before fees, reconstructed using a moving weighted average after sorting fills by `executionAt`. BUY adds `qty × price`; SELL removes the proportional cost of the sold shares, without subtracting sale proceeds. Closing a position resets its cost basis before any later purchases. Proportional cost reductions and PnL percentages use half-up decimal division to 24 decimal places, extended for tiny quotients to retain at least 24 significant digits; amounts remain exact.
+
+`unrealizedPnlUsd = amount × currentBid − costBasisUsd`. `unrealizedPnlPercent = unrealizedPnlUsd / costBasisUsd × 100`, so `'20'` means 20%. Both fields are estimates before fees, slippage, and taxes, using current bids rather than historical quotes. A successful quote response without a matching positive bid preserves the amount and known cost basis but returns `null` for both PnL fields. A failed quote request rejects the wallet.
 
 ```js
 const equity = await client.getEquityWallet()
-// { AAPL: { amount: '1.25' }, NVDA: { amount: '3' } }
+// {
+//   NVDA: {
+//     amount: '3', costBasisUsd: '750',
+//     unrealizedPnlUsd: '150', unrealizedPnlPercent: '20'
+//   }
+// }
 ```
 
-If sells exceed buys, the selected trade window cannot establish a nonnegative estimate and the method rejects. This does not imply the account balance is invalid. Fills omit pre-window holdings, transfers, tokenized mint/redeem activity, settlement, and other adjustments. Even a window beginning at zero is only an estimate. Large histories may exceed API or runtime limits; there is no cache, cooldown, or pagination resume facility.
+If total sells exceed total buys, the selected trade window cannot establish a nonnegative estimate and the method rejects. This does not imply the account balance is invalid. If the final amount is positive but chronological sells exceed the holdings established so far, or BUY and SELL fills share an execution timestamp without a documented ordering, the amount is retained while `costBasisUsd` and both PnL fields are `null`. Fills omit pre-window holdings, transfers, tokenized mint/redeem activity, settlement, corporate actions, and other adjustments. Even a window beginning at zero is only an estimate. Large histories may exceed API or runtime limits; there is no cache, cooldown, or pagination resume facility.
 
 `getFundingWallet({ recvWindow } = {})`
 
@@ -230,18 +242,28 @@ const funding = await client.getFundingWallet()
 
 `getPortfolio({ startTime, endTime, recvWindow } = {})`
 
-Combines the equity estimate, current Funding Wallet, and one current quote per nonzero estimated position. History options select fills, not historical prices or a historical funding balance. Positions are valued at positive bids; cash uses free + locked and the explicit USDC/USD reporting assumption of 1. Values are calculated as exact decimals before conversion to finite JavaScript numbers; overflow and nonzero underflow are rejected. Only weights are rounded, to four decimal places with half-up ties. Rounded weights may not sum to exactly one.
+Combines the same equity reconstruction and bid-based PnL calculation as `getEquityWallet()` with the current Funding Wallet. It fetches history once and one current quote per nonzero estimated position, sharing each quote between valuation and PnL. History options select fills, not historical prices or a historical funding balance. Positions are valued at positive bids; cash uses free + locked and the explicit USDC/USD reporting assumption of 1. Calculations use decimal arithmetic, with cost and percentage division rounded as described above, before conversion to finite JavaScript numbers; overflow and nonzero underflow are rejected. Numeric conversion may lose decimal precision. Weights are rounded to four decimal places with half-up ties and may not sum to exactly one.
+
+Each position includes numeric `costBasisUsd`, `unrealizedPnlUsd`, and `unrealizedPnlPercent`, or `null` when unavailable. Global `totals.unrealizedPnlUsd` is the sum of open-position PnL; `totals.unrealizedPnlPercent` divides that sum by the combined remaining cost basis and multiplies by 100. It is not an average of position percentages, and cash is excluded. If any position lacks a valid bid or known cost basis, both global PnL fields are `null`, while other available position results are retained.
 
 ```js
 const portfolio = await client.getPortfolio()
 // {
-//   totals: { totalUsd: 6805, positionsUsd: 900, cashUsd: 5905 },
+//   totals: {
+//     totalUsd: 6805, positionsUsd: 900, cashUsd: 5905,
+//     unrealizedPnlUsd: 150, unrealizedPnlPercent: 20
+//   },
 //   cash: { USDC: { amount: 5905, quote: 1, usd: 5905, weight: 0.8677 } },
-//   positions: { NVDA: { amount: 3, quote: 300, usd: 900, weight: 0.1323 } }
+//   positions: {
+//     NVDA: {
+//       amount: 3, quote: 300, usd: 900, weight: 0.1323,
+//       costBasisUsd: 750, unrealizedPnlUsd: 150, unrealizedPnlPercent: 20
+//     }
+//   }
 // }
 ```
 
-A successful quote response with no valid positive bid leaves that position's `amount` intact and sets its `quote` and `usd` to `null`. A present `quote.symbol` that is invalid or does not match the position symbol after trimming and uppercasing has the same effect. It also sets `positionsUsd`, `totalUsd`, and every weight to `null`, preserving cash and other available position values. A rejected quote request rejects the report. Cash is always included; an empty portfolio has zero totals and null weights, while positive cash alone has weight 1. Reads occur sequentially and are not an atomic account snapshot.
+A successful quote response with no valid positive bid leaves that position's `amount` and known cost basis intact and sets its `quote`, `usd`, and PnL fields to `null`. A present `quote.symbol` that is invalid or does not match the position symbol after trimming and uppercasing has the same effect. It also sets `positionsUsd`, `totalUsd`, and every weight to `null`, preserving cash and other available position values. An unknown cost basis alone does not prevent market valuation or weight calculation. A rejected quote request rejects the report. Cash is always included; an empty portfolio has zero USD totals and null weights, while positive cash alone has weight 1. With no open positions, global unrealized PnL is `0` USD and its percentage is `null`. Reads occur sequentially and are not an atomic account snapshot.
 
 ## Verification and build
 
