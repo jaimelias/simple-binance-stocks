@@ -188,11 +188,10 @@ test('rolling coverage includes yesterday through day 365 and occurrences beyond
   assert.equal(end.market.next.opensAt, Date.parse('2027-11-29T04:00:00-05:00'))
 })
 
-test('Node and GAS client helpers expose the holiday calendar synchronously without HTTP', t => {
+test('Node and GAS static client helpers expose the holiday calendar synchronously without HTTP', t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2027-01-18T15:00:00Z') })
   for (const Client of [NodeClient, GasClient]) {
-    const client = new Client({ API_KEY: 'dummy-key', API_SECRET: 'dummy-secret' })
-    const state = client.getNyMarketSession()
+    const state = Client.getNyMarketSession()
     assert.equal(state instanceof Promise, false)
     assert.equal(state.isHoliday, true)
     assert.equal(state.session, 'closed')

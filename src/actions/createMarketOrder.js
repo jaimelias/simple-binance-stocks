@@ -1,6 +1,7 @@
 import { publicOptions, orderAmount, decimalValue, normalizeSymbol, validateMaxSpreadPercent } from '../utilities/publicInputs.js'
 import { placeOrder as assertOrder } from '../utilities/endpointAsserts.js'
 import { placementFields, placementPayload, loadOrderRules, submitOrder } from '../utilities/orderPreparation.js'
+import { logError } from '../utilities/logError.js'
 
 /** Buy by notional or size a sell using one bid quote, always guarding the spread. */
 export const createMarketOrder = async (main, options) => {
@@ -23,7 +24,7 @@ export const createMarketOrder = async (main, options) => {
       }
       bid = decimalValue(quote?.bidPrice, 'quote.bidPrice')
     } catch (error) {
-      main.errorLogger(error)
+      await logError(main, error)
       throw error
     }
     const quantity = amount.divToInt(bid.times(rules.stepSize)).times(rules.stepSize)

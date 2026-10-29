@@ -5,10 +5,5 @@ import { cancelOrder as assertCancel } from '../utilities/endpointAsserts.js'
 export const cancelOrder = async (main, options) => {
   const payload = publicOptions(options, ['orderId', 'recvWindow'])
   assertCancel(payload)
-  try {
-    return await main.apiClient('cancelOrder', payload)
-  } catch (error) {
-    if (error !== null && (typeof error === 'object' || typeof error === 'function')) error.orderId = payload.orderId
-    throw error
-  }
+  return main.apiClient('cancelOrder', payload)
 }

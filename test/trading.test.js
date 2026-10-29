@@ -546,6 +546,111 @@ for (const Client of [NodeClient, GasClient]) {
     await assert.rejects(client.placeOrder(direct()), error => /invalid response/.test(error.message) && !!error.clientOrderId)
   })
 
+  check('preserves transport errors when synchronous or asynchronous logging fails', async ({ client, state }) => {
+    const failure = new TypeError('transport disconnected')
+    const loggerFailure = new Error('logger disconnected')
+    state.handler = () => { throw failure }
+    for (const asynchronous of [false, true]) {
+      let logged
+      client.errorLogger = error => {
+        logged = error
+        if (asynchronous) return Promise.reject(loggerFailure)
+        throw loggerFailure
+      }
+      await assert.rejects(client.getQuote('AAPL'), error => error === failure)
+      assert.equal(logged, failure)
+    }
+  })
+
+  check('waits for asynchronous logging to settle before rejecting with the original error', async ({ client, state }) => {
+    const failure = new TypeError('transport disconnected')
+    state.handler = () => { throw failure }
+    for (const rejectLogger of [false, true]) {
+      let started
+      let release
+      let settled = false
+      let finished = false
+      let logged
+      const loggingStarted = new Promise(resolve => { started = resolve })
+      const loggingGate = new Promise(resolve => { release = resolve })
+      client.errorLogger = async error => {
+        logged = error
+        started()
+        await loggingGate
+        finished = true
+        if (rejectLogger) throw new Error('logger disconnected')
+      }
+      const operation = client.getQuote('AAPL').then(
+        () => { settled = true; return null },
+        error => { settled = true; return error }
+      )
+      await loggingStarted
+      await new Promise(setImmediate)
+      assert.equal(logged, failure)
+      assert.equal(settled, false)
+      release()
+      assert.equal(await operation, failure)
+      assert.equal(finished, true)
+    }
+  })
+
+  check('preserves quote guard errors when synchronous or asynchronous logging fails', async ({ client, calls, state }) => {
+    for (const asynchronous of [false, true]) {
+      let logged
+      client.errorLogger = error => {
+        logged = error
+        const loggerFailure = new Error('logger disconnected')
+        if (asynchronous) return Promise.reject(loggerFailure)
+        throw loggerFailure
+      }
+      state.quote = { bidPrice: '99', askPrice: '102' }
+      await assert.rejects(client.placeOrder(direct()), error =>
+        error === logged && error instanceof RangeError && /maxSpreadPercent/.test(error.message))
+      state.quote = { bidPrice: 'invalid', askPrice: '3.01' }
+      await assert.rejects(client.createMarketOrder({ symbol: 'AAPL', side: 'SELL', amountInUSD: 10 }), error =>
+        error === logged && error instanceof TypeError && /bidPrice/.test(error.message))
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
+  })
+
+  check('attaches reconciliation IDs before invoking the logger exactly once', async ({ client, calls, state }) => {
+    const snapshots = []
+    client.errorLogger = error => snapshots.push({
+      clientOrderId: error.clientOrderId, orderId: error.orderId, message: error.message
+    })
+    const failure = new TypeError('transport disconnected')
+    for (const response of [failure, { httpStatus: 503, rawBody: 'unknown outcome' },
+      { rawBody: '{bad JSON' }, { status: 'S' }]) {
+      state.handler = call => {
+        if (!call.path.endsWith('/place')) return
+        if (response instanceof Error) throw response
+        return response
+      }
+      const before = snapshots.length
+      await assert.rejects(client.placeOrder(direct()))
+      assert.equal(snapshots.length, before + 1)
+      assert.equal(snapshots.at(-1).clientOrderId, calls.at(-1).payload.clientOrderId)
+      assert.match(snapshots.at(-1).clientOrderId, /^[a-f0-9-]{36}$/)
+    }
+    state.handler = call => call.path.endsWith('/cancel') ? { httpStatus: 503, rawBody: 'unknown outcome' } : undefined
+    await assert.rejects(client.cancelOrder({ orderId: 'order-2' }))
+    assert.equal(snapshots.length, 5)
+    assert.equal(snapshots.at(-1).orderId, 'order-2')
+    assert.equal(snapshots.at(-1).clientOrderId, undefined)
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 4)
+    assert.equal(calls.filter(call => call.path.endsWith('/cancel')).length, 1)
+  })
+
+  check('preserves and logs frozen order errors when reconciliation IDs cannot be attached', async ({ client, state, errors }) => {
+    const failure = Object.freeze(new TypeError('transport disconnected'))
+    state.handler = call => {
+      if (call.path.endsWith('/place') || call.path.endsWith('/cancel')) throw failure
+    }
+    await assert.rejects(client.placeOrder(direct()), error => error === failure)
+    await assert.rejects(client.cancelOrder({ orderId: 'order-2' }), error => error === failure)
+    assert.deepEqual(errors, [failure, failure])
+  })
+
   check('sells all wallet positions sequentially with exact full quantities and placement defaults', async ({ client, calls, state }) => {
     state.trades = page([
       fill(1, { qty: '1.234567890123456789' }),

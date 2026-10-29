@@ -2,6 +2,7 @@ import { nodeFetch } from "./nodeFetch.js";
 import { endpoints } from "../utilities/endpointsMaster.js";
 import * as endpointAsserts from '../utilities/endpointAsserts.js';
 import { consumeOrderGuard } from '../utilities/orderPreparation.js';
+import { logError } from '../utilities/logError.js';
 
 
 export const nodeApiClient = async (main, key, payload) => {
@@ -21,7 +22,7 @@ export const nodeApiClient = async (main, key, payload) => {
 
         return await nodeFetch(main, endpoint, payload);
     } catch (err) {
-        main.errorLogger(err)
+        await logError(main, err, key, payload)
         throw err
     }
 }

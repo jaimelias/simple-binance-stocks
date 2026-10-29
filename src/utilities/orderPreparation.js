@@ -1,5 +1,6 @@
 import * as endpointAsserts from './endpointAsserts.js'
 import { decimalValue, normalizeSymbol, publicOptions, validateMaxSpreadPercent } from './publicInputs.js'
+import { logError } from './logError.js'
 
 const guardedOrders = new WeakMap()
 
@@ -119,7 +120,7 @@ export const submitOrder = async (main, payload, rules,
     assertMaxSpread(quote, maxSpreadPercent)
     if (rejectMarketable) assertNonMarketable(payload, quote)
   } catch (error) {
-    main.errorLogger(error)
+    await logError(main, error)
     throw error
   }
   if (payload.clientOrderId === undefined) payload.clientOrderId = main.createClientOrderId()
@@ -127,11 +128,6 @@ export const submitOrder = async (main, payload, rules,
   guardedOrders.set(payload, main)
   try {
     return await main.apiClient('placeOrder', payload)
-  } catch (error) {
-    if (error !== null && (typeof error === 'object' || typeof error === 'function')) {
-      error.clientOrderId = payload.clientOrderId
-    }
-    throw error
   } finally {
     guardedOrders.delete(payload)
   }

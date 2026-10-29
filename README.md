@@ -1,6 +1,6 @@
 # simple-binance-stocks
 
-JavaScript client for Binance Stocks and ETFs in Node.js and Google Apps Script (GAS). Orders use USD prices and are funded in USDC. The shared API lives in `src/BinanceStocksCore.js`; the runtime classes handle HTTP, signatures, and client order IDs.
+JavaScript client for Binance Stocks and ETFs in Node.js, Cloudflare Workers, and Google Apps Script (GAS). Orders use USD prices and are funded in USDC. The shared API lives in `src/BinanceStocksCore.js`; the runtime classes handle HTTP, signatures, and client order IDs.
 
 **Wallet and portfolio results are estimates.** Equity holdings are reconstructed from fills in a selected time window. Funding cash includes locked funds, and the report uses current bids and a USDC reporting value of USD 1. These results are not an authoritative holding statement, spendable balance, historical valuation, or guaranteed liquidation value.
 
@@ -25,7 +25,27 @@ const client = new BinanceStocks({
 })
 ```
 
-`baseUrl` defaults to `https://api.binance.com`. `errorLogger` defaults to `console.error` and receives errors from the API adapters before they are rethrown. Keep credentials private. There is no constructor `recvWindow` option.
+`baseUrl` defaults to `https://api.binance.com`. Keep credentials private. There is no constructor `recvWindow` option.
+
+`errorLogger(error)` defaults to `console.error` and accepts synchronous or async callbacks in Node.js, Cloudflare Workers, and GAS. The library awaits the callback before propagating the original failure. A callback that throws or rejects is ignored; its failure never replaces or wraps the original error. Logging covers API adapter errors and order quote-validation errors. Public input validation, symbol-rule validation, and wallet/report reconstruction errors outside the adapters are not automatically logged.
+
+For placement failures, `error.clientOrderId` is attached before logging; cancellation failures receive `error.orderId` before logging. The logger and caller receive the same error object. If that object cannot accept the identifier, such as a frozen error, the library preserves and logs it without adding the field. Quote failures before placement have no generated placement identifier. Async callbacks should settle promptly because the failing operation waits for them.
+
+For Cloudflare Workers, use the same package entry point. It uses native `fetch`, `TextEncoder`, and Web Crypto (`crypto.subtle` and `crypto.randomUUID()`), so the library does not require `nodejs_compat`. Store `BINANCE_API_KEY` and `BINANCE_API_SECRET` as Worker secrets and pass them from `env`. Call API methods inside a `fetch` or `scheduled` handler:
+
+```js
+import BinanceStocks from 'simple-binance-stocks'
+
+export default {
+  async fetch(request, env) {
+    const client = new BinanceStocks({
+      API_KEY: env.BINANCE_API_KEY,
+      API_SECRET: env.BINANCE_API_SECRET
+    })
+    return Response.json(await client.getPortfolio())
+  }
+}
+```
 
 For GAS, run `npm install` and `npm run build` from a repository checkout, then load the generated `dist/BinanceStocksGas.min.js` in your Apps Script project. It exposes `BinanceStocks`; instantiate it with the same options, obtaining secrets from your chosen GAS secret storage. Use `await` in an async entry function. All thirteen trading, history, wallet, and portfolio methods return Promises in both runtimes. GAS uses `UrlFetchApp` and `Utilities` internally.
 
@@ -143,7 +163,7 @@ const ack = await client.placeOrder({
 })
 ```
 
-On a placement transport or response error, the propagated Error retains its type/message and gains `clientOrderId`. Use it with `getOrder({ clientOrderId: error.clientOrderId })` to reconcile an uncertain outcome before deciding on another order. There are no automatic retries, replacement IDs, fallback lookups, or polling.
+On a placement transport or response error, the propagated Error retains its identity/type/message and gains `clientOrderId` before `errorLogger` runs, when the error object permits that field. Use it with `getOrder({ clientOrderId: error.clientOrderId })` to reconcile an uncertain outcome before deciding on another order. There are no automatic retries, replacement IDs, fallback lookups, or polling.
 
 ### Selling positions
 

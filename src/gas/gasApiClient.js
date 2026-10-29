@@ -2,9 +2,10 @@ import { gasFetch } from "./gasFetch.js";
 import { endpoints } from "../utilities/endpointsMaster.js";
 import * as endpointAsserts from '../utilities/endpointAsserts.js';
 import { consumeOrderGuard } from '../utilities/orderPreparation.js';
+import { logError } from '../utilities/logError.js';
 
 
-export const gasApiClient = (main, key, payload) => {
+export const gasApiClient = async (main, key, payload) => {
 
     try {
 
@@ -20,7 +21,7 @@ export const gasApiClient = (main, key, payload) => {
         const endpoint = endpoints[key];
         return gasFetch(main, endpoint, payload);
     } catch (err) {
-        main.errorLogger(err)
+        await logError(main, err, key, payload)
         throw err;
     }
 
