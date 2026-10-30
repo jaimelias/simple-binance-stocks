@@ -46,11 +46,12 @@ export const loadOrderRules = async (main, symbol) => {
   }
   const parsed = { ...rules }
   for (const field of ['stepSize', 'minQty', 'maxQty', 'minNotional', 'maxNotional']) {
+    if (field === 'minQty' && rules[field] === undefined) continue
     parsed[field] = decimalValue(rules[field], `symbol.${field}`, {
       positive: field !== 'minQty' && field !== 'minNotional', stringOnly: true
     })
   }
-  if (parsed.minQty.gt(parsed.maxQty) || parsed.minNotional.gt(parsed.maxNotional)) {
+  if ((parsed.minQty !== undefined && parsed.minQty.gt(parsed.maxQty)) || parsed.minNotional.gt(parsed.maxNotional)) {
     throw new TypeError('Symbol minimum exceeds maximum')
   }
   return parsed
@@ -65,7 +66,9 @@ export const validateOrderRules = (payload, rules, estimatedNotional) => {
   if (payload.quantity !== undefined) {
     quantity = decimalValue(payload.quantity, 'quantity')
     if (!quantity.mod(rules.stepSize).isZero()) throw new RangeError('quantity must be an exact stepSize increment')
-    if (quantity.lt(rules.minQty) || quantity.gt(rules.maxQty)) throw new RangeError('quantity is outside symbol bounds')
+    if ((rules.minQty !== undefined && quantity.lt(rules.minQty)) || quantity.gt(rules.maxQty)) {
+      throw new RangeError('quantity is outside symbol bounds')
+    }
   }
   if (payload.orderType === 'LIMIT') {
     const requireFlag = field => {

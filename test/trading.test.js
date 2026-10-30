@@ -4,12 +4,27 @@ import { createHmac, randomUUID } from 'node:crypto'
 import NodeClient from '../src/BinanceStocksNode.js'
 import GasClient from '../src/BinanceStocksGas.js'
 import Decimal from '../src/utilities/decimal.js'
+import { getSymbolInfo } from '../src/getters/getSymbolInfo.js'
+import { loadOrderRules, validateOrderRules } from '../src/utilities/orderPreparation.js'
 
 const rules = () => ({
   symbol: 'AAPL', tradability: 'BUY_SELL', stepSize: '0.001', minQty: '0.001', maxQty: '100000',
   minNotional: '0.01', maxNotional: '1000000', fractionable: true, fractionableEh: true,
   extendedSession: true, overnightSupported: true
 })
+// Observed OKTA sizing fields, with valid session/fractional metadata for LIMIT tests.
+const oktaRules = (extra = {}) => ({
+  symbol: 'OKTA', tradability: 'BUY_SELL', stepSize: '0.000000001', maxQty: '1000000.000000000',
+  minNotional: '5.00000000', maxNotional: '1000000.00000000', fractionable: true, fractionableEh: true,
+  extendedSession: true, overnightSupported: true, ...extra
+})
+const oktaOrders = ['BUY', 'SELL'].flatMap(side => [
+  ['createLimitOrder', { symbol: 'OKTA', side, amountInUSD: 12.5, entryPrice: '10.00', tradingSession: 'RTH' }],
+  ['createMarketOrder', { symbol: 'OKTA', side, amountInUSD: 12.5 }],
+  ['placeOrder', { symbol: 'OKTA', side, orderType: 'LIMIT', price: '10.00', quantity: '1.25', tradingSession: 'RTH' }],
+  ['placeOrder', { symbol: 'OKTA', side, orderType: 'MARKET',
+    ...(side === 'BUY' ? { notional: '12.5' } : { quantity: '1.25' }) }]
+])
 const fill = (id, extra = {}) => ({
   executionId: `fill-${id}`, orderId: 'same-order', symbol: 'AAPL', quote: 'USDC', side: 'BUY',
   qty: '0.01', price: '3', executionAt: id, ...extra
@@ -129,6 +144,137 @@ for (const Client of [NodeClient, GasClient]) {
     for (const order of orders) {
       for (const field of ['amountInUSD', 'entryPrice', 'notional']) assert.equal(order.payload[field], undefined)
     }
+  })
+
+  for (const [name, extra] of [['omitted', {}], ['zero', { minQty: '0' }], ['positive', { minQty: '1.25' }]]) {
+    check(`${name} minQty allows every supported placement with one fresh snapshot and one submission`, async ({ client, calls, state }) => {
+      state.rules = Object.freeze(oktaRules(extra))
+      state.quote = { symbol: 'OKTA', bidPrice: '10.00', askPrice: '10.01' }
+      const raw = await client.getSymbolInfo('OKTA')
+      assert.deepEqual(raw, state.rules)
+      assert.equal(Object.hasOwn(raw, 'minQty'), Object.hasOwn(extra, 'minQty'))
+      for (const [method, params] of oktaOrders) {
+        const start = calls.length
+        assert.deepEqual(await client[method](params), state.placement)
+        assert.deepEqual(calls.slice(start).map(call => call.path.split('/').at(-1)), ['exchangeInfo', 'quote', 'place'])
+        const payload = calls.at(-1).payload
+        assert.equal(payload.side, params.side)
+        assert.equal(payload.quoteAsset, 'USDC')
+        if (payload.orderType === 'MARKET' && payload.side === 'BUY') {
+          assert.equal(payload.notional, '12.5')
+          assert.equal(payload.quantity, undefined)
+        } else {
+          assert.equal(payload.quantity, '1.25')
+          assert.equal(payload.notional, undefined)
+        }
+        assert.equal(payload.amountInUSD, undefined)
+        assert.equal(payload.minQty, undefined)
+      }
+      assert.deepEqual(raw, oktaRules(extra))
+    })
+  }
+
+  check('rejects supplied invalid minQty and reversed bounds on every placement path', async ({ client, calls, state }) => {
+    const invalidFloors = [null, 0, 1, -1, '', ' ', ' 0', '0 ', '-0', '-0.1', '1e-9', 'Infinity', 'NaN',
+      '.1', '1.', '1.2.3', 'bad', true, false, {}, []]
+    for (const [method, params] of oktaOrders) {
+      for (const minQty of invalidFloors) {
+        state.rules = oktaRules({ minQty })
+        await assert.rejects(client[method](params), /symbol.minQty/)
+      }
+      for (const extra of [{ minQty: '1000000.000000001' }, { minNotional: '1000000.00000001' }]) {
+        state.rules = oktaRules(extra)
+        await assert.rejects(client[method](params), /minimum exceeds maximum/)
+      }
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/quote')).length, 0)
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
+  })
+
+  check('enforces a supplied quantity floor exactly without raising the requested size', async ({ client, calls, state }) => {
+    state.rules = oktaRules({ minQty: '1.250000001' })
+    state.quote = { bidPrice: '10.00', askPrice: '10.01' }
+    for (const [method, params] of oktaOrders) {
+      // MARKET BUY supplies notional only; its execution quantity is determined by Binance.
+      if (params.side === 'BUY' && (method === 'createMarketOrder' || params.orderType === 'MARKET')) continue
+      await assert.rejects(client[method](params), /quantity is outside symbol bounds/)
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
+  })
+
+  check('omitted minQty preserves required decimal rules, quantity caps, symbol identity and tradability', async ({ client, calls, state }) => {
+    state.quote = { bidPrice: '10.00', askPrice: '10.01' }
+    for (const [method, params] of oktaOrders) {
+      for (const field of ['stepSize', 'maxQty', 'minNotional', 'maxNotional']) {
+        const invalid = [undefined, null, 1, '-1', '', '1e2', 'Infinity']
+        if (field !== 'minNotional') invalid.push('0')
+        for (const value of invalid) {
+          state.rules = oktaRules({ [field]: value })
+          await assert.rejects(client[method](params), new RegExp(`symbol.${field}`))
+        }
+      }
+      for (const extra of [{ symbol: 'MRNA' }, { tradability: 'UNKNOWN' }]) {
+        state.rules = oktaRules(extra)
+        await assert.rejects(client[method](params), /Missing or malformed symbol rules/)
+      }
+      for (const tradability of ['NONE', params.side === 'BUY' ? 'SELL' : 'BUY']) {
+        state.rules = oktaRules({ tradability })
+        await assert.rejects(client[method](params), /does not allow/)
+      }
+      if (params.side === 'BUY' && (method === 'createMarketOrder' || params.orderType === 'MARKET')) continue
+      state.rules = oktaRules({ maxQty: '1' })
+      await assert.rejects(client[method](params), /quantity is outside symbol bounds/)
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
+  })
+
+  check('omitted minQty preserves positive quantities, exact step alignment and notional bounds', async ({ client, calls, state }) => {
+    state.rules = oktaRules()
+    state.quote = { bidPrice: '10.00', askPrice: '10.01' }
+    for (const [method, params] of oktaOrders) {
+      if (params.side !== 'BUY' || (method !== 'createMarketOrder' && params.orderType !== 'MARKET')) {
+        await assert.rejects(client[method]({ ...params,
+          ...(method === 'placeOrder' ? { quantity: '0' } : { amountInUSD: 1e-9 }) }), /quantity/)
+        if (method === 'placeOrder') {
+          await assert.rejects(client[method]({ ...params, quantity: '1.2500000001' }), /exact stepSize increment/)
+        }
+      }
+      // Direct MARKET SELL has no estimated notional; Binance checks its execution notional.
+      if (method === 'placeOrder' && params.orderType === 'MARKET' && params.side === 'SELL') continue
+      for (const extra of [{ minNotional: '12.50000001' }, { maxNotional: '12.49999999' }]) {
+        state.rules = oktaRules(extra)
+        await assert.rejects(client[method](params), /notional is outside symbol bounds/)
+      }
+      state.rules = oktaRules()
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
+  })
+
+  check('omitted minQty preserves LIMIT session/fractional and all placement spread guards', async ({ client, calls, state }) => {
+    for (const [method, params] of oktaOrders) {
+      state.rules = oktaRules()
+      state.quote = { bidPrice: '10.00', askPrice: '11.00' }
+      await assert.rejects(client[method](params), /maxSpreadPercent/)
+      state.quote = { bidPrice: '10.00', askPrice: '10.01' }
+      if (method !== 'createLimitOrder' && params.orderType !== 'LIMIT') continue
+      for (const tradingSession of [undefined, 'CLOSED']) {
+        await assert.rejects(client[method]({ ...params, tradingSession }), /tradingSession/)
+      }
+      await assert.rejects(client[method]({ ...params, timeInForce: 'GTC' }), /fractional GTC/)
+      for (const [tradingSession, field] of [['RTH', 'fractionable'], ['EXTENDED', 'fractionableEh'],
+        ['EXTENDED', 'extendedSession'], ['24H', 'overnightSupported']]) {
+        for (const value of [false, undefined]) {
+          state.rules = oktaRules({ [field]: value })
+          await assert.rejects(client[method]({ ...params, tradingSession }), new RegExp(field))
+        }
+      }
+      if (method === 'createLimitOrder') {
+        state.rules = oktaRules()
+        state.quote = { bidPrice: '10.00', askPrice: '10.00' }
+        await assert.rejects(client[method]({ ...params, rejectMarketable: true }), /rejectMarketable/)
+      }
+    }
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 0)
   })
 
   check('rejectMarketable rejects equal and crossing prices on both sides without submitting', async ({ client, calls, state }) => {
@@ -495,7 +641,7 @@ for (const Client of [NodeClient, GasClient]) {
   check('enforces symbol directions, bounds and requested session support', async ({ client, state }) => {
     for (const extra of [{ tradability: 'NONE' }, { tradability: 'SELL' }, { stepSize: '0' },
       { maxQty: '0.1' }, { minNotional: '20' }, { maxNotional: '1' }, { minQty: '9', maxQty: '1' },
-      { minQty: undefined }, { symbol: 'MSFT' }, { tradability: 'UNKNOWN' }]) {
+      { minQty: null }, { symbol: 'MSFT' }, { tradability: 'UNKNOWN' }]) {
       state.rules = { ...rules(), ...extra }
       await assert.rejects(client.createLimitOrder(limit()))
     }
@@ -1088,6 +1234,29 @@ for (const Client of [NodeClient, GasClient]) {
     assert.equal(await client.getSymbolInfo('aapl'), undefined)
     state.handler = call => call.path.endsWith('/quote') ? { rawBody: '' } : undefined
     assert.equal(await client.getQuote('AAPL'), null)
+  })
+}
+
+// JSON cannot carry undefined, so exercise that distinct input through the real getter and shared guards directly.
+for (const [name, extra] of [['omitted', {}], ['explicitly undefined', { minQty: undefined }]]) {
+  test(`shared rules preserve raw rows with ${name} minQty`, async () => {
+    const row = Object.freeze(oktaRules(extra))
+    const main = { apiClient: async (key, payload) => {
+      assert.equal(key, 'exchangeInfo')
+      assert.deepEqual(payload, {})
+      return { symbols: [row] }
+    } }
+    main.getSymbolInfo = symbol => getSymbolInfo(main, symbol)
+    assert.equal(await main.getSymbolInfo('OKTA'), row)
+    const parsed = await loadOrderRules(main, 'OKTA')
+    assert.notEqual(parsed, row)
+    assert.equal(parsed.minQty, undefined)
+    assert.equal(Object.hasOwn(parsed, 'minQty'), Object.hasOwn(extra, 'minQty'))
+    for (const [, params] of oktaOrders.filter(([method]) => method === 'placeOrder')) {
+      assert.doesNotThrow(() => validateOrderRules(params, parsed))
+    }
+    assert.deepEqual(row, oktaRules(extra))
+    assert.equal(Object.hasOwn(row, 'minQty'), Object.hasOwn(extra, 'minQty'))
   })
 }
 

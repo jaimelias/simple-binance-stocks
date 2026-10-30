@@ -89,6 +89,8 @@ These methods retain their existing signatures. The new methods trim and upperca
 
 `createLimitOrder(options)`, `createMarketOrder(options)`, and `placeOrder(params)` each fetch one fresh symbol-rule snapshot and submit at most once. They return the raw placement acknowledgement, such as `{ status: 'S', orderId, clientOrderId }`. Extra response fields, missing optional fields, and decimal strings are preserved. `{ status: 'F', ... }` is a valid failed acknowledgement and resolves normally. `S` means accepted; it does not prove a fill.
 
+Symbol rules require positive plain decimal strings for `stepSize`, `maxQty`, and `maxNotional`, and a nonnegative plain decimal string for `minNotional`. `minQty` is optional: omission or `undefined` means no quantity floor is supplied. When present, it must be a finite nonnegative plain decimal string (`'0'` is valid) no greater than `maxQty`; `null`, numbers, negative values, and malformed strings are rejected. No synthetic minimum is added, and `getSymbolInfo()` preserves the raw symbol row. Quantities must still be positive, exactly aligned to `stepSize`, and within `maxQty` and any supplied `minQty`; known notionals must satisfy their bounds. Tradability and applicable LIMIT session/fractional rules still apply in both Node.js and GAS.
+
 These three placement methods accept these common options:
 
 | Option | Contract |
