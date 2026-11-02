@@ -1,9 +1,11 @@
 import { getNyMarketSession } from './utilities/getNyMarketSession.js'
+import {getExchangeInfo} from './getters/getExchangeInfo.js'
 import { getSymbolInfo } from './getters/getSymbolInfo.js'
 import { createLimitOrder } from './actions/createLimitOrder.js'
 import { createMarketOrder } from './actions/createMarketOrder.js'
 import { placeOrder } from './actions/placeOrder.js'
 import { sellPositions } from './actions/sellPositions.js'
+import { prepareSellQuantity } from './utilities/prepareSellQuantity.js'
 import { cancelOrder } from './actions/cancelOrder.js'
 import { cancelAllOrders } from './actions/cancelAllOrders.js'
 import { getOrder } from './getters/getOrder.js'
@@ -33,8 +35,15 @@ export default class BinanceStocksCore {
     return getNyMarketSession(date);
   }
 
+  /** Prepare an estimated fractional exit synchronously, using an explicit buffer in steps. */
+  static prepareSellQuantity(options) { return prepareSellQuantity(options) }
+
   async getQuote(symbol) {
     return this.apiClient('quote', { symbol })
+  }
+
+  async getExchangeInfo() {
+    return getExchangeInfo(this)
   }
 
   async getSymbolInfo(symbol) {
@@ -51,7 +60,7 @@ export default class BinanceStocksCore {
   async placeOrder(params) { return placeOrder(this, params) }
 
   /** Submit MARKET sells for all or selected positions from getEquityWallet. */
-  async sellPositions(positions) { return sellPositions(this, positions) }
+  async sellPositions(positions, options = {}) { return sellPositions(this, positions, options) }
 
   /** Request cancellation and return Binance's acknowledgement. */
   async cancelOrder(options) { return cancelOrder(this, options) }

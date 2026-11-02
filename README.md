@@ -47,7 +47,7 @@ export default {
 }
 ```
 
-For GAS, run `npm install` and `npm run build` from a repository checkout, then load the generated `dist/BinanceStocksGas.min.js` in your Apps Script project. It exposes `BinanceStocks`; instantiate it with the same options, obtaining secrets from your chosen GAS secret storage. Use `await` in an async entry function. All thirteen trading, history, wallet, and portfolio methods return Promises in both runtimes. GAS uses `UrlFetchApp` and `Utilities` internally.
+For GAS, run `npm install` and `npm run build` from a repository checkout, then load the generated `dist/BinanceStocksGas.min.js` in your Apps Script project. It exposes `BinanceStocks`; instantiate it with the same options, obtaining secrets from your chosen GAS secret storage. Use `await` in an async entry function. All thirteen trading, history, wallet, and portfolio methods return Promises in both runtimes; the static `prepareSellQuantity` helper is synchronous. GAS uses `UrlFetchApp` and `Utilities` internally.
 
 Client methods use standard class receiver binding. Call them on the client instance, or bind them when passing them as callbacks, for example `client.getQuote.bind(client)`.
 
@@ -89,7 +89,7 @@ These methods retain their existing signatures. The new methods trim and upperca
 
 `createLimitOrder(options)`, `createMarketOrder(options)`, and `placeOrder(params)` each fetch one fresh symbol-rule snapshot and submit at most once. They return the raw placement acknowledgement, such as `{ status: 'S', orderId, clientOrderId }`. Extra response fields, missing optional fields, and decimal strings are preserved. `{ status: 'F', ... }` is a valid failed acknowledgement and resolves normally. `S` means accepted; it does not prove a fill.
 
-Symbol rules require positive plain decimal strings for `stepSize`, `maxQty`, and `maxNotional`, and a nonnegative plain decimal string for `minNotional`. `minQty` is optional: omission or `undefined` means no quantity floor is supplied. When present, it must be a finite nonnegative plain decimal string (`'0'` is valid) no greater than `maxQty`; `null`, numbers, negative values, and malformed strings are rejected. No synthetic minimum is added, and `getSymbolInfo()` preserves the raw symbol row. Quantities must still be positive, exactly aligned to `stepSize`, and within `maxQty` and any supplied `minQty`; known notionals must satisfy their bounds. Tradability and applicable LIMIT session/fractional rules still apply in both Node.js and GAS.
+Symbol rules require positive plain decimal strings for `stepSize`, `maxQty`, and `maxNotional`, and a nonnegative plain decimal string for `minNotional`. `minQty` is optional: omission or `undefined` means no quantity floor is supplied. When present, it must be a finite nonnegative plain decimal string (`'0'` is valid) no greater than `maxQty`; `null`, numbers, negative values, and malformed strings are rejected. No synthetic minimum is added, and `getSymbolInfo()` preserves the raw symbol row. Quantities must still be positive, exactly aligned to `stepSize`, and within `maxQty` and any supplied `minQty`; known notionals must satisfy their bounds. Tradability and applicable LIMIT session/fractional rules still apply in both Node.js and GAS. `OFFMARKET`, `NONE`, unsupported tradability values, and disallowed order directions reject. A small `stepSize` does not imply fractional permission: LIMIT orders check the applicable `fractionable` or `fractionableEh` flag and session support. MARKET orders retain their existing validation contract and never send `tradingSession`.
 
 These three placement methods accept these common options:
 
@@ -167,15 +167,48 @@ const ack = await client.placeOrder({
 
 On a placement transport or response error, the propagated Error retains its identity/type/message and gains `clientOrderId` before `errorLogger` runs, when the error object permits that field. Use it with `getOrder({ clientOrderId: error.clientOrderId })` to reconcile an uncertain outcome before deciding on another order. There are no automatic retries, replacement IDs, fallback lookups, or polling.
 
+### Preparing estimated fractional exits
+
+`BinanceStocks.prepareSellQuantity({ quantity, stepSize, bufferSteps })` is a synchronous static helper shared by Node.js and GAS. It returns a decimal string using exact arithmetic:
+
+```text
+buffer = stepSize × bufferSteps
+preparedQuantity = floor((quantity − buffer) / stepSize) × stepSize
+```
+
+`quantity` and `stepSize` must be positive plain decimal strings; numbers, signs, whitespace, and exponent notation are rejected. `bufferSteps` is required and must be a nonnegative safe integer. Zero performs step rounding only. Positive buffering is intended for deliberate exits from estimated fractional holdings; it rejects whole-share quantities, including `'3.000'`. A buffer greater than or equal to the quantity, or a rounded result of zero, also rejects. No minimum is added and quantities are never increased.
+
+```js
+const quantity = BinanceStocks.prepareSellQuantity({
+  quantity: '27.44440023', stepSize: '0.000000001', bufferSteps: 10
+}) // '27.44440022'
+```
+
+This addresses the observed OKTA case: reconstructed holdings were `'27.44440023'`, while the Binance App showed `'27.44440022'` available to sell. Rounding alone leaves `'27.44440023'`; one step leaves `'27.444400229'`, still too large. Ten steps cover this particular discrepancy. They are not a proven universal bound, and the library never applies a positive buffer implicitly. Binance Stocks currently has no authoritative available-share balance endpoint: the prepared quantity is a conservative sizing workaround, not a verified available balance or a guarantee of acceptance.
+
+The helper only prepares a quantity; it does not fetch or validate symbol trading permissions or order bounds. Fetch current rules for preparation and let placement validate the final order against fresh rules. Snapshot values, including MU's supplied `minQty` and SPCX's different `maxQty`, are not universal trading rules. `getEquityWallet()` and `getPortfolio()` continue reporting unbuffered estimates, cost basis, and PnL reconstructed from fills.
+
+**Upgrading the SDK alone will not fix a bot that persists immutable SELL intents.** The bot must adopt this helper before saving an intent, persist the prepared quantity, and later pass that exact quantity to `placeOrder`. Explicit placement never silently resizes an intent:
+
+```js
+const rules = await client.getSymbolInfo('OKTA')
+const quantity = BinanceStocks.prepareSellQuantity({
+  quantity: '27.44440023', stepSize: rules.stepSize, bufferSteps: 10
+})
+const intent = { symbol: 'OKTA', side: 'SELL', orderType: 'MARKET', quantity }
+// Save this final intent in the bot's store before submitting it.
+const ack = await client.placeOrder(intent)
+```
+
 ### Selling positions
 
-`sellPositions(null | [{ symbol }])`
+`sellPositions(null | [{ symbol }], { bufferSteps = 0 } = {})`
 
-Uses one `getEquityWallet()` call with its default history window as the source of truth for positions and quantities. Pass explicit `null` to target every wallet position, or an array of plain `{ symbol }` objects to target only those symbols. Symbols are trimmed, uppercased, and deduplicated in first-occurrence order. Unsupported fields are rejected using the same options rules as other methods. Missing arguments, `undefined`, and malformed entries reject before any API calls. An empty array returns `[]` without API calls.
+Uses one `getEquityWallet()` call with its default history window as the source of estimated positions and quantities. Pass explicit `null` to target every wallet position, or an array of plain `{ symbol }` objects to target only those symbols. Symbols are trimmed, uppercased, and deduplicated in first-occurrence order. Unsupported fields and invalid buffer options are rejected using the same options rules as other methods. Missing selections, `undefined`, and malformed entries reject before any API calls. An empty array returns `[]` without API calls.
 
 The wallet call also fetches a current quote for every nonzero wallet position to estimate PnL, including symbols outside the selection. A failed history or wallet quote request rejects before any sells are submitted. Each selected order still obtains its own fresh spread-check quote.
 
-Each selected position is submitted sequentially through `placeOrder({ symbol, side: 'SELL', orderType: 'MARKET', quantity: position.amount })`, including the required 2% spread check. The decimal-string amount is passed unchanged; the quote validates the spread without USD sizing, rounding, or splitting. Existing placement defaults and validations apply, including `USDC`, `DAY`, exact step increments, and quantity bounds. Binance validates the execution notional. Spread failures are returned as per-position errors and processing continues.
+Each selected position fetches one fresh symbol-rule snapshot, prepares its final quantity through `prepareSellQuantity`, and submits a MARKET SELL sequentially through the shared placement guard. Omitted or `undefined` `bufferSteps` defaults to zero: step rounding only. An explicitly positive buffer applies to the selected fractional estimates; whole-share buffering returns a per-position error without submission. Existing defaults and validations apply, including `USDC`, `DAY`, tradability, exact step increments, `maxQty`, and any supplied `minQty`. The fresh spread-check quote also estimates the adjusted bid notional for `minNotional` and `maxNotional` validation. Sizes below minimums reject without placement or any increase; Binance still validates the execution notional. The required 2% spread protection, client order IDs, and error logging use the same path as other placements. Per-position failures are returned and processing continues.
 
 ```js
 const results = await client.sellPositions(null)
@@ -187,10 +220,17 @@ Or sell only selected positions:
 const results = await client.sellPositions([{ symbol: 'AAPL' }, { symbol: 'NVDA' }])
 ```
 
+To intentionally buffer an estimated fractional exit, choose the buffer explicitly:
+
+```js
+const results = await client.sellPositions([{ symbol: 'OKTA' }], { bufferSteps: 10 })
+// With the estimate and stepSize above, results[0].quantity is '27.44440022'.
+```
+
 Returns an array in wallet-key order for `null`, or normalized selection order for an array:
 
-- `{ symbol, quantity, ack }` preserves the raw Binance acknowledgement, including failed acknowledgements with `status: 'F'`. `status: 'S'` means accepted, not filled.
-- `{ symbol, quantity, error }` preserves the original error, including `error.clientOrderId` when available for reconciliation through `getOrder`.
+- `{ symbol, quantity, ack }` includes the actual submitted prepared quantity and preserves the raw Binance acknowledgement, including failed acknowledgements with `status: 'F'`. `status: 'S'` means accepted, not filled.
+- `{ symbol, quantity, error }` preserves the original error, including `error.clientOrderId` when available for reconciliation through `getOrder`. `quantity` is the prepared quantity when preparation succeeded, or the original estimate if rule loading or preparation failed. An error may occur before any submission.
 - `{ symbol, skipped: 'NO_POSITION' }` reports a requested symbol absent from the wallet.
 
 A wallet failure rejects the entire call before any orders are submitted. An empty wallet with `null` returns `[]`. Individual placement failures are collected and processing continues; earlier submissions are not rolled back. There are no automatic retries, cancellations, or fill polling. Reconcile uncertain submissions before submitting another sell for the same position.

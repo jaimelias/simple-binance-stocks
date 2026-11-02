@@ -111,7 +111,7 @@ const assertMaxSpread = (quote, maxSpreadPercent) => {
 
 /** Validate, check the spread against one quote, and submit once with a reconciliation ID. */
 export const submitOrder = async (main, payload, rules,
-  { estimatedNotional, rejectMarketable = false, maxSpreadPercent = 2, quote } = {}) => {
+  { estimatedNotional, estimateMarketSellNotional = false, rejectMarketable = false, maxSpreadPercent = 2, quote } = {}) => {
   validateMaxSpreadPercent(maxSpreadPercent)
   endpointAsserts.placeOrder(payload)
   validateOrderRules(payload, rules, estimatedNotional)
@@ -125,6 +125,9 @@ export const submitOrder = async (main, payload, rules,
   } catch (error) {
     await logError(main, error)
     throw error
+  }
+  if (estimateMarketSellNotional) {
+    validateOrderRules(payload, rules, decimalValue(payload.quantity, 'quantity').times(quote.bidPrice))
   }
   if (payload.clientOrderId === undefined) payload.clientOrderId = main.createClientOrderId()
   endpointAsserts.placeOrder(payload)
