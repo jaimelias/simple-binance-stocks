@@ -5,7 +5,6 @@ import { createLimitOrder } from './actions/createLimitOrder.js'
 import { createMarketOrder } from './actions/createMarketOrder.js'
 import { placeOrder } from './actions/placeOrder.js'
 import { sellPositions } from './actions/sellPositions.js'
-import { prepareSellQuantity } from './utilities/prepareSellQuantity.js'
 import { cancelOrder } from './actions/cancelOrder.js'
 import { cancelAllOrders } from './actions/cancelAllOrders.js'
 import { getOrder } from './getters/getOrder.js'
@@ -15,10 +14,13 @@ import { getTradeHistory } from './getters/getTradeHistory.js'
 import { getEquityWallet } from './getters/getEquityWallet.js'
 import { getFundingWallet } from './getters/getFundingWallet.js'
 import { getPortfolio } from './getters/getPortfolio.js'
+import { createEstimatedExitBuffer } from './utilities/prepareSellQuantity.js'
 
 export default class BinanceStocksCore {
 
   constructor(options = {}) {
+
+    this.estimatedExitBuffer = createEstimatedExitBuffer(options.estimatedExitBuffer)
 
     this.errorLogger = typeof options.errorLogger === 'function' 
       ? options.errorLogger
@@ -34,9 +36,6 @@ export default class BinanceStocksCore {
   static getNyMarketSession(date) {
     return getNyMarketSession(date);
   }
-
-  /** Prepare an estimated fractional exit synchronously, using an explicit buffer in steps. */
-  static prepareSellQuantity(options) { return prepareSellQuantity(options) }
 
   async getQuote(symbol) {
     return this.apiClient('quote', { symbol })
@@ -56,7 +55,7 @@ export default class BinanceStocksCore {
   /** Submit a MARKET buy by notional or size a sell using the bid, with a default 2% spread limit. */
   async createMarketOrder(options) { return createMarketOrder(this, options) }
 
-  /** Validate and submit an explicit Binance order without resizing it. */
+  /** Validate and submit an explicit Binance order with optional SELL sizing. */
   async placeOrder(params) { return placeOrder(this, params) }
 
   /** Submit MARKET sells for all or selected positions from getEquityWallet. */

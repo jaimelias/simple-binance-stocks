@@ -1,6 +1,7 @@
 import * as endpointAsserts from './endpointAsserts.js'
 import { decimalValue, normalizeSymbol, publicOptions, validateMaxSpreadPercent } from './publicInputs.js'
 import { logError } from './logError.js'
+import { prepareAutomaticSellQuantity, prepareSellQuantity, validateBufferSteps } from './prepareSellQuantity.js'
 
 const guardedOrders = new WeakMap()
 
@@ -14,6 +15,52 @@ export const consumeOrderGuard = (main, payload) => {
 export const placementFields = [
   'symbol', 'side', 'timeInForce', 'walletType', 'tokenize', 'clientOrderId', 'recvWindow', 'quoteAsset'
 ]
+
+export const validatePlacementOptions = (side, { bufferSteps, maxSellQuantity, beforeSubmit, quantityMode }) => {
+  if (beforeSubmit !== undefined && typeof beforeSubmit !== 'function') {
+    throw new TypeError('beforeSubmit must be a function')
+  }
+  if (bufferSteps !== undefined) validateBufferSteps(bufferSteps)
+  if (maxSellQuantity !== undefined) decimalValue(maxSellQuantity, 'maxSellQuantity', { stringOnly: true })
+  if (side !== 'SELL' && (bufferSteps !== undefined || maxSellQuantity !== undefined)) {
+    throw new TypeError('bufferSteps and maxSellQuantity are only supported for SELL orders')
+  }
+  if (quantityMode !== undefined && !['EXACT', 'ESTIMATED_EXIT'].includes(quantityMode)) {
+    throw new TypeError('quantityMode must be EXACT or ESTIMATED_EXIT')
+  }
+  if (quantityMode === 'EXACT' && (bufferSteps !== undefined || maxSellQuantity !== undefined)) {
+    throw new TypeError('EXACT quantityMode forbids bufferSteps and maxSellQuantity')
+  }
+  if (quantityMode === 'ESTIMATED_EXIT' && side !== 'SELL') {
+    throw new TypeError('ESTIMATED_EXIT quantityMode is only supported for SELL orders')
+  }
+}
+
+export const hasSellSizing = (main, payload, { bufferSteps, maxSellQuantity, quantityMode }) => {
+  if (quantityMode === 'EXACT') return false
+  const reserve = payload.side === 'SELL' ? main.estimatedExitBuffer?.[payload.symbol] : undefined
+  if (quantityMode === 'ESTIMATED_EXIT' && bufferSteps === undefined && reserve === undefined) {
+    throw new TypeError('ESTIMATED_EXIT requires a matching estimatedExitBuffer policy or explicit bufferSteps')
+  }
+  return bufferSteps !== undefined || maxSellQuantity !== undefined || reserve !== undefined
+}
+
+export const applySellSizing = (main, payload, rules, { bufferSteps, maxSellQuantity, quantityMode },
+  { estimatedExit = false, round = false } = {}) => {
+  if (quantityMode === 'EXACT' || payload.side !== 'SELL') return
+  const reserve = main.estimatedExitBuffer?.[payload.symbol]
+  if (bufferSteps === undefined && maxSellQuantity === undefined && reserve === undefined && !round) return
+  let quantity = decimalValue(payload.quantity, 'quantity')
+  if (maxSellQuantity !== undefined && quantity.gt(maxSellQuantity)) quantity = decimalValue(maxSellQuantity, 'maxSellQuantity')
+  const fullCap = maxSellQuantity !== undefined && quantity.gte(
+    decimalValue(maxSellQuantity, 'maxSellQuantity').divToInt(rules.stepSize).times(rules.stepSize))
+  if (bufferSteps === undefined && reserve !== undefined && (estimatedExit || fullCap)) {
+    payload.quantity = prepareAutomaticSellQuantity({ quantity: quantity.toString(), stepSize: rules.stepSize.toString(), reserveQuantity: reserve })
+    return
+  }
+  if (bufferSteps === undefined && maxSellQuantity === undefined && !round) return
+  payload.quantity = prepareSellQuantity({ quantity: quantity.toString(), stepSize: rules.stepSize.toString(), bufferSteps: bufferSteps ?? 0 })
+}
 
 /** Build a Binance payload with public defaults and decimal strings. */
 export const placementPayload = (params) => {
@@ -109,8 +156,7 @@ const assertMaxSpread = (quote, maxSpreadPercent) => {
   }
 }
 
-/** Validate, check the spread against one quote, and submit once with a reconciliation ID. */
-export const submitOrder = async (main, payload, rules,
+const prepareOrder = async (main, payload, rules,
   { estimatedNotional, estimateMarketSellNotional = false, rejectMarketable = false, maxSpreadPercent = 2, quote } = {}) => {
   validateMaxSpreadPercent(maxSpreadPercent)
   endpointAsserts.placeOrder(payload)
@@ -131,6 +177,20 @@ export const submitOrder = async (main, payload, rules,
   }
   if (payload.clientOrderId === undefined) payload.clientOrderId = main.createClientOrderId()
   endpointAsserts.placeOrder(payload)
+  return payload
+}
+
+/** Validate, check the spread against one quote, and submit once with a reconciliation ID. */
+export const submitOrder = async (main, payload, rules, options = {}) => {
+  await prepareOrder(main, payload, rules, options)
+  if (options.beforeSubmit !== undefined) {
+    try {
+      await options.beforeSubmit(Object.freeze({ ...payload, maxSpreadPercent: options.maxSpreadPercent ?? 2, quantityMode: 'EXACT' }))
+    } catch (error) {
+      await logError(main, error, 'placeOrder', payload)
+      throw error
+    }
+  }
   guardedOrders.set(payload, main)
   try {
     return await main.apiClient('placeOrder', payload)

@@ -4,10 +4,6 @@ import { createClientOrderId } from "./gas/gasOrderId.js";
 
 export default class BinanceStocks extends BinanceStocksCore {
 
-    engine() {
-        return 'gas';
-    }
-
     /** Supply a runtime UUID to the shared placement implementation. */
     createClientOrderId() { return createClientOrderId(); }
 

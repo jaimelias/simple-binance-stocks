@@ -9,7 +9,7 @@ export const nodeApiClient = async (main, key, payload) => {
 
     try {
 
-        if (typeof key !== 'string' || key === '' || !Object.hasOwn(endpointAsserts ?? {}, key)) {
+        if (typeof key !== 'string' || key === '' || !Object.hasOwn(endpointAsserts, key)) {
             throw new Error('Invalid core request.');
         }
     

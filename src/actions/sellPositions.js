@@ -1,6 +1,5 @@
 import { publicOptions, normalizeSymbol } from '../utilities/publicInputs.js'
-import { prepareSellQuantity, validateBufferSteps } from '../utilities/prepareSellQuantity.js'
-import { placementPayload, loadOrderRules, submitOrder } from '../utilities/orderPreparation.js'
+import { placementPayload, loadOrderRules, validatePlacementOptions, applySellSizing, submitOrder } from '../utilities/orderPreparation.js'
 
 /** Sell all or selected wallet positions once, preserving each placement outcome. */
 export const sellPositions = async (main, positions, options = {}) => {
@@ -9,8 +8,8 @@ export const sellPositions = async (main, positions, options = {}) => {
   }
   const symbols = positions === null ? null : [...new Set(Array.from(positions, position =>
     normalizeSymbol(publicOptions(position, ['symbol']).symbol)))]
-  const { bufferSteps = 0 } = publicOptions(options, ['bufferSteps'])
-  validateBufferSteps(bufferSteps)
+  const { bufferSteps, beforeSubmit } = publicOptions(options, ['bufferSteps', 'beforeSubmit'])
+  validatePlacementOptions('SELL', { bufferSteps, beforeSubmit })
   if (symbols?.length === 0) return []
 
   const wallet = await main.getEquityWallet()
@@ -23,9 +22,10 @@ export const sellPositions = async (main, positions, options = {}) => {
     let quantity = wallet[symbol].amount
     try {
       const rules = await loadOrderRules(main, symbol)
-      quantity = prepareSellQuantity({ quantity, stepSize: rules.stepSize.toString(), bufferSteps })
       const payload = placementPayload({ symbol, side: 'SELL', orderType: 'MARKET', quantity })
-      const ack = await submitOrder(main, payload, rules, { estimateMarketSellNotional: true })
+      applySellSizing(main, payload, rules, { bufferSteps }, { estimatedExit: true, round: true })
+      quantity = payload.quantity
+      const ack = await submitOrder(main, payload, rules, { estimateMarketSellNotional: true, beforeSubmit })
       results.push({ symbol, quantity, ack })
     } catch (error) {
       results.push({ symbol, quantity, error })

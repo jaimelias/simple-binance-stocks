@@ -126,9 +126,6 @@ export default class Decimal {
   }
 
   toString() { return this.toFixed(); }
-  isFinite() { return true; }
-  isPositive() { return !this.isZero(); }
-  isNegative() { return false; }
   isZero() { return this.digits === '0'; }
   isInteger() { return this.scale === 0; }
   decimalPlaces() { return this.scale; }
@@ -142,7 +139,6 @@ export default class Decimal {
   lte(value) { return this.comparedTo(value) <= 0; }
   gt(value) { return this.comparedTo(value) > 0; }
   gte(value) { return this.comparedTo(value) >= 0; }
-  eq(value) { return this.comparedTo(value) === 0; }
 
   plus(value) {
     const operands = aligned(this, new Decimal(value));

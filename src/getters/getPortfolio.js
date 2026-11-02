@@ -32,7 +32,7 @@ export const getPortfolio = async (main, options = {}) => {
   let complete = true
   for (const [symbol, position] of equity) {
     const entry = {
-      amount: reportNumber(position.amount), quote: null, usd: null, weight: null,
+      amount: reportNumber(position.amount), amountExact: position.amount.toString(), quote: null, usd: null, weight: null,
       costBasisUsd: position.costBasis === null ? null : reportNumber(position.costBasis),
       ...unrealizedPnl(position.value, position.costBasis, true)
     }

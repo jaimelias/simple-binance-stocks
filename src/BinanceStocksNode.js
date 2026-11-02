@@ -5,10 +5,6 @@ import { createClientOrderId } from "./node/nodeOrderId.js";
 
 export default class BinanceStocks extends BinanceStocksCore {
 
-    engine() {
-        return 'node';
-    }
-
     /** Supply a runtime UUID to the shared placement implementation. */
     createClientOrderId() { return createClientOrderId(); }
 

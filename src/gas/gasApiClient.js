@@ -9,8 +9,7 @@ export const gasApiClient = async (main, key, payload) => {
 
     try {
 
-        // Or, if the key must exist as an own property
-        if (typeof key !== 'string' || key === '' || !Object.hasOwn(endpointAsserts ?? {}, key)) {
+        if (typeof key !== 'string' || key === '' || !Object.hasOwn(endpointAsserts, key)) {
             throw new Error('Invalid #core request.');
         }
 
