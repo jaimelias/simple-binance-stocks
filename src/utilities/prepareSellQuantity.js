@@ -1,19 +1,10 @@
-import { decimalValue, normalizeSymbol, publicOptions } from './publicInputs.js'
+import { decimalValue, publicOptions } from './publicInputs.js'
 
-export const createEstimatedExitBuffer = (value = {}) => {
-  if (value === null || typeof value !== 'object' ||
-      ![Object.prototype, null].includes(Object.getPrototypeOf(value))) {
-    throw new TypeError('estimatedExitBuffer must be a plain symbol-to-reserve map')
-  }
-  const policy = Object.create(null)
-  for (const [key, reserveQuantity] of Object.entries(value)) {
-    const symbol = normalizeSymbol(key)
-    if (Object.hasOwn(policy, symbol)) throw new TypeError(`Duplicate estimatedExitBuffer symbol: ${symbol}`)
-    const reserve = decimalValue(reserveQuantity, `estimatedExitBuffer.${symbol}`, { stringOnly: true })
-    if (reserve.gte('1')) throw new RangeError('estimatedExitBuffer reserves must be less than one share')
-    policy[symbol] = reserve.toString()
-  }
-  return Object.freeze(policy)
+export const estimatedExitBufferValue = (value) => {
+  if (value === undefined) return undefined
+  const reserve = decimalValue(value, 'estimatedExitBuffer', { stringOnly: true })
+  if (reserve.gte('1')) throw new RangeError('estimatedExitBuffer must be less than one share')
+  return reserve.toString()
 }
 
 export const validateBufferSteps = (bufferSteps) => {

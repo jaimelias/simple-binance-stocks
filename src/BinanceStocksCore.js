@@ -14,13 +14,13 @@ import { getTradeHistory } from './getters/getTradeHistory.js'
 import { getEquityWallet } from './getters/getEquityWallet.js'
 import { getFundingWallet } from './getters/getFundingWallet.js'
 import { getPortfolio } from './getters/getPortfolio.js'
-import { createEstimatedExitBuffer } from './utilities/prepareSellQuantity.js'
+import { estimatedExitBufferValue } from './utilities/prepareSellQuantity.js'
 
 export default class BinanceStocksCore {
 
   constructor(options = {}) {
 
-    this.estimatedExitBuffer = createEstimatedExitBuffer(options.estimatedExitBuffer)
+    this.estimatedExitBuffer = estimatedExitBufferValue(options.estimatedExitBuffer)
 
     this.errorLogger = typeof options.errorLogger === 'function' 
       ? options.errorLogger

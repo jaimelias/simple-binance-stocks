@@ -27,7 +27,7 @@ const client = new BinanceStocks({
 
 `baseUrl` defaults to `https://api.binance.com`. Keep credentials private. There is no constructor `recvWindow` option.
 
-`estimatedExitBuffer` optionally configures automatic fractional-exit reserves once on the client. It is a plain symbol-to-reserve map, such as `{ OKTA: '0.00000001' }`, and defaults to an empty map with automatic buffering disabled. Reserves are share quantities, not USD amounts: each must be a positive plain decimal string less than one share. Symbol keys are trimmed and uppercased; duplicate normalized keys reject. The client keeps a frozen copy, so later mutations of the supplied map do not change its policy. A configured symbol classifies its raw direct SELL quantities as estimated exits; use this policy only for that workflow and use `quantityMode: 'EXACT'` for finalized quantities.
+`estimatedExitBuffer` optionally configures one automatic fractional-exit reserve for the client, such as `'0.00000001'`. Omission or `undefined` leaves automatic buffering disabled. The reserve is a share quantity, not a USD amount: it must be a positive plain decimal string less than one share. Numbers, objects, zero, signs, whitespace, and exponent notation are rejected. The client stores its canonical decimal-string value. Once enabled, this reserve applies to every eligible symbol using that symbol's current step size; no symbol list is required. Raw direct SELL quantities on an enabled client are treated as estimated exits. Use `quantityMode: 'EXACT'` for ordinary exact quantities and finalized intents.
 
 `errorLogger(error)` defaults to `console.error` and accepts synchronous or async callbacks in Node.js, Cloudflare Workers, and GAS. The library awaits the callback before propagating the original failure. A callback that throws or rejects is ignored; its failure never replaces or wraps the original error. Logging covers API adapter errors, order quote-validation errors, and `beforeSubmit` failures. Public input validation, symbol-rule validation, and wallet/report reconstruction errors outside the adapters are not automatically logged.
 
@@ -166,7 +166,7 @@ The monetary helpers never send `amountInUSD` or `entryPrice` to Binance. Final 
 | BUY MARKET | `notional` | `price`, `quantity`, `tradingSession` |
 | SELL MARKET | `quantity` | `price`, `notional`, `tradingSession` |
 
-`amountInUSD` and `entryPrice` are rejected by this method. Without a matching client policy or supplied SELL sizing options, quantities are preserved and must already match the exact step increment and symbol bounds. For a policy-configured symbol, a raw SELL quantity is treated as an estimated exit and prepared internally. `quantityMode: 'EXACT'` preserves an already-finalized order even on a policy-enabled client: it rejects `bufferSteps` and `maxSellQuantity` and validates without resizing or rounding. `quantityMode: 'ESTIMATED_EXIT'` explicitly identifies a SELL estimate and requires either a matching policy or manual `bufferSteps`; it rejects BUY orders. Other mode values reject. This option belongs to `placeOrder`.
+`amountInUSD` and `entryPrice` are rejected by this method. Without an enabled client reserve or supplied SELL sizing options, quantities are preserved and must already match the exact step increment and symbol bounds. With the reserve enabled, raw SELL quantities for every symbol are treated as estimated exits and prepared internally. `quantityMode: 'EXACT'` preserves an already-finalized order even on an enabled client: it rejects `bufferSteps` and `maxSellQuantity` and validates without resizing or rounding. `quantityMode: 'ESTIMATED_EXIT'` explicitly identifies a SELL estimate and requires either an enabled client reserve or manual `bufferSteps`; it rejects BUY orders. Other mode values reject. This option belongs to `placeOrder`.
 
 Manual SELL sizing uses current rules; explicit `bufferSteps: 0` overrides the automatic policy and performs step rounding only. Known notionals are checked: LIMIT price × final quantity, MARKET BUY notional, and estimated bid notional for convenience or adjusted MARKET SELLs. For an unadjusted direct MARKET SELL, Binance validates its execution notional.
 
@@ -182,7 +182,7 @@ On a placement transport or response error, the propagated Error retains its ide
 
 ### Direct estimated-position exits
 
-The existing placement methods perform SELL preparation internally using the client reserve policy or supplied sizing options. They fetch the current symbol `stepSize`; callers do not supply it. `bufferSteps` and `maxSellQuantity` reject BUY orders, including `bufferSteps: 0`. The client policy never buffers BUY orders or unconfigured symbols. Quantities, reserve alignment, caps, and final rounding use exact decimal arithmetic:
+The existing placement methods perform SELL preparation internally using the client reserve or supplied sizing options. They fetch each symbol's current `stepSize`; callers do not supply it. `bufferSteps` and `maxSellQuantity` reject BUY orders, including `bufferSteps: 0`. The global reserve covers every eligible fractional exit, including symbols first encountered after client construction. BUY and `EXACT` orders never receive an automatic buffer. Quantities, reserve alignment, caps, and final rounding use exact decimal arithmetic:
 
 ```text
 cappedQuantity = min(quantity, maxSellQuantity)  // when a cap is supplied
@@ -194,13 +194,13 @@ finalQuantity = floor((cappedQuantity − buffer) / stepSize) × stepSize
 
 Automatic reserves are limited to deliberate estimated fractional exits. A quantity that becomes a whole share count after step rounding receives no positive automatic buffer, including `'3.000'` and a tiny excess that rounds to `'3'`. A rounded-up automatic reserve of one share or more rejects. Manual positive `bufferSteps` still rejects an effective whole-share quantity. A buffer that consumes the quantity, a rounded result of zero, or a final quantity below applicable minimums rejects without placement. Quantities are never increased to satisfy a minimum. All final step, quantity, notional, tradability, and applicable session/fractional checks remain enforced.
 
-Configure the reserve once, then use the exact wallet amount directly without per-order `bufferSteps`:
+Configure the global reserve once, then use exact wallet amounts directly without listing symbols or passing per-order `bufferSteps`:
 
 ```js
 const client = new BinanceStocks({
   API_KEY: process.env.BINANCE_API_KEY,
   API_SECRET: process.env.BINANCE_API_SECRET,
-  estimatedExitBuffer: { OKTA: '0.00000001' }
+  estimatedExitBuffer: '0.00000001'
 })
 const wallet = await client.getEquityWallet()
 const ack = await client.placeOrder({
@@ -264,7 +264,7 @@ Uses one `getEquityWallet()` call with its default history window as the source 
 
 The wallet call also fetches a current quote for every nonzero wallet position to estimate PnL, including symbols outside the selection. A failed history or wallet quote request rejects before any sells are submitted. Each selected order still obtains its own fresh spread-check quote.
 
-Each selected position fetches one fresh symbol-rule snapshot, prepares its final quantity internally, and submits a MARKET SELL sequentially through the shared placement guard. Omitted or `undefined` `bufferSteps` uses the matching client policy for fractional estimates; without a matching policy it performs step rounding only. Automatic buffering skips quantities that become whole shares after alignment. Explicit `bufferSteps` overrides the policy: zero rounds only, while a positive value applies the manual buffer and rejects whole-share quantities. Existing defaults and validations apply, including `USDC`, `DAY`, tradability, exact step increments, `maxQty`, and any supplied `minQty`. The fresh spread-check quote also estimates the adjusted bid notional for `minNotional` and `maxNotional` validation. Sizes below minimums reject without placement or any increase; Binance still validates the execution notional. The required 2% spread protection, client order IDs, and error logging use the same path as other placements. A supplied `beforeSubmit` runs once for each final order that reaches submission; callback failures are returned as per-position errors and processing continues. Other per-position failures are also returned and processing continues.
+Each selected position fetches one fresh symbol-rule snapshot, prepares its final quantity internally, and submits a MARKET SELL sequentially through the shared placement guard. Omitted or `undefined` `bufferSteps` uses the enabled global reserve for every eligible fractional estimate; with the reserve disabled it performs step rounding only. Automatic buffering skips quantities that become whole shares after alignment. Explicit `bufferSteps` overrides the policy: zero rounds only, while a positive value applies the manual buffer and rejects whole-share quantities. Existing defaults and validations apply, including `USDC`, `DAY`, tradability, exact step increments, `maxQty`, and any supplied `minQty`. The fresh spread-check quote also estimates the adjusted bid notional for `minNotional` and `maxNotional` validation. Sizes below minimums reject without placement or any increase; Binance still validates the execution notional. The required 2% spread protection, client order IDs, and error logging use the same path as other placements. A supplied `beforeSubmit` runs once for each final order that reaches submission; callback failures are returned as per-position errors and processing continues. Other per-position failures are also returned and processing continues.
 
 ```js
 const results = await client.sellPositions(null)
@@ -276,11 +276,11 @@ Or sell only selected positions:
 const results = await client.sellPositions([{ symbol: 'AAPL' }, { symbol: 'NVDA' }])
 ```
 
-With the client policy configured above, no per-call buffer is needed for a selected exit:
+With the global reserve configured above, buffer every eligible fractional wallet exit without listing symbols:
 
 ```js
-const results = await client.sellPositions([{ symbol: 'OKTA' }])
-// With the estimate and stepSize above, results[0].quantity is '27.44440022'.
+const results = await client.sellPositions(null)
+// Each eligible fractional position uses its current symbol step; whole shares are not buffered.
 ```
 
 Returns an array in wallet-key order for `null`, or normalized selection order for an array:

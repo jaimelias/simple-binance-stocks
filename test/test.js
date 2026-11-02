@@ -20,7 +20,7 @@ const test = async () => {
 
   const exchangeInfo = await exchange.getExchangeInfo()
 
-  console.log(exchangeInfo.symbols.length)
+  console.log([...new Set(exchangeInfo.symbols.map(o => o.minNotional))])
 
   await saveFile({ fileName: 'exchangeInfo.json', pathName: '.storage', data: exchangeInfo })
 }

@@ -38,9 +38,9 @@ export const validatePlacementOptions = (side, { bufferSteps, maxSellQuantity, b
 
 export const hasSellSizing = (main, payload, { bufferSteps, maxSellQuantity, quantityMode }) => {
   if (quantityMode === 'EXACT') return false
-  const reserve = payload.side === 'SELL' ? main.estimatedExitBuffer?.[payload.symbol] : undefined
+  const reserve = payload.side === 'SELL' ? main.estimatedExitBuffer : undefined
   if (quantityMode === 'ESTIMATED_EXIT' && bufferSteps === undefined && reserve === undefined) {
-    throw new TypeError('ESTIMATED_EXIT requires a matching estimatedExitBuffer policy or explicit bufferSteps')
+    throw new TypeError('ESTIMATED_EXIT requires estimatedExitBuffer or explicit bufferSteps')
   }
   return bufferSteps !== undefined || maxSellQuantity !== undefined || reserve !== undefined
 }
@@ -48,7 +48,7 @@ export const hasSellSizing = (main, payload, { bufferSteps, maxSellQuantity, qua
 export const applySellSizing = (main, payload, rules, { bufferSteps, maxSellQuantity, quantityMode },
   { estimatedExit = false, round = false } = {}) => {
   if (quantityMode === 'EXACT' || payload.side !== 'SELL') return
-  const reserve = main.estimatedExitBuffer?.[payload.symbol]
+  const reserve = main.estimatedExitBuffer
   if (bufferSteps === undefined && maxSellQuantity === undefined && reserve === undefined && !round) return
   let quantity = decimalValue(payload.quantity, 'quantity')
   if (maxSellQuantity !== undefined && quantity.gt(maxSellQuantity)) quantity = decimalValue(maxSellQuantity, 'maxSellQuantity')
