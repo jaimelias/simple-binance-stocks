@@ -1,7 +1,7 @@
 import { decimalValue, publicOptions } from './publicInputs.js'
 
-export const estimatedExitBufferValue = (value) => {
-  if (value === undefined) return undefined
+export const estimatedExitBufferValue = (value = '0.00000001') => {
+  if (value === false) return undefined
   const reserve = decimalValue(value, 'estimatedExitBuffer', { stringOnly: true })
   if (reserve.gte('1')) throw new RangeError('estimatedExitBuffer must be less than one share')
   return reserve.toString()
@@ -32,6 +32,8 @@ export const prepareSellQuantity = (options) => {
 export const prepareAutomaticSellQuantity = ({ quantity, stepSize, reserveQuantity }) => {
   const amount = decimalValue(quantity, 'quantity', { stringOnly: true })
   const step = decimalValue(stepSize, 'stepSize', { stringOnly: true })
+  // Preserve whole shares; final order validation rejects incompatible step sizes.
+  if (amount.isInteger()) return amount.toString()
   const rounded = amount.divToInt(step).times(step)
   if (rounded.isZero()) throw new RangeError('Prepared sell quantity must be greater than zero')
   if (rounded.isInteger()) return rounded.toString()

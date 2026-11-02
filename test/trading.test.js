@@ -101,9 +101,9 @@ const harness = (t, Client, options = {}) => {
 
 for (const Client of [NodeClient, GasClient]) {
   const runtime = Client === NodeClient ? 'Node' : 'GAS'
-  const check = (name, fn) => test(`${runtime}: ${name}`, async t => fn(harness(t, Client)))
-  const checkAutomatic = (name, fn) => test(`${runtime}: ${name}`, async t => fn(harness(t, Client,
-    { estimatedExitBuffer: '0.00000001' })))
+  const check = (name, fn) => test(`${runtime}: ${name}`, async t => fn(harness(t, Client,
+    { estimatedExitBuffer: false })))
+  const checkAutomatic = (name, fn) => test(`${runtime}: ${name}`, async t => fn(harness(t, Client)))
 
   test(`${runtime}: synchronous sell preparation fixes the exact OKTA discrepancy only with an explicit sufficient buffer`, () => {
     const input = Object.freeze({ quantity: '27.44440023', stepSize: '0.000000001', bufferSteps: 10 })
@@ -186,11 +186,15 @@ for (const Client of [NodeClient, GasClient]) {
     assert.equal(calls.filter(call => call.path.endsWith('/cancel-all')).length, 1)
   })
 
-  check('automatic policy validates one canonical global reserve without symbol configuration or requests', async ({ client, calls }) => {
+  checkAutomatic('automatic policy defaults to one canonical global reserve and accepts explicit disable or override without requests', async ({ client, calls }) => {
+    assert.equal(client.estimatedExitBuffer, '0.00000001')
+    assert.equal(new Client().estimatedExitBuffer, '0.00000001')
+    assert.equal(new Client({ estimatedExitBuffer: undefined }).estimatedExitBuffer, '0.00000001')
+    assert.equal(new Client({ estimatedExitBuffer: false }).estimatedExitBuffer, undefined)
     const configured = new Client({ estimatedExitBuffer: '0.0000000100' })
     assert.equal(configured.estimatedExitBuffer, '0.00000001')
-    assert.equal(client.estimatedExitBuffer, undefined)
-    for (const estimatedExitBuffer of [null, false, true, 10, 0.1, '', ' ', 'auto', [], new Date(), {},
+    assert.equal(new Client({ estimatedExitBuffer: '0.0000000200' }).estimatedExitBuffer, '0.00000002')
+    for (const estimatedExitBuffer of [null, true, 10, 0.1, '', ' ', 'auto', [], new Date(), {},
       { OKTA: '0.00000001' }, { AAPL: '0.1', MSFT: '0.2' }, new String('0.00000001'),
       ' 0.1', '0.1 ', '0', '-1', '+0.1', '.1', '1.', '1e-8', 'Infinity', 'NaN', '1', '1.000000001', '2']) {
       assert.throws(() => new Client({ estimatedExitBuffer }), /estimatedExitBuffer|reserve/)
@@ -198,7 +202,7 @@ for (const Client of [NodeClient, GasClient]) {
     assert.equal(calls.length, 0)
   })
 
-  checkAutomatic('configured estimated exits fix the exact balance threshold without per-order buffers', async ({ client, calls, state }) => {
+  checkAutomatic('default estimated exits fix the exact balance threshold without client or per-order buffer configuration', async ({ client, calls, state }) => {
     state.rules = oktaRules()
     state.quote = { symbol: 'OKTA', bidPrice: '10', askPrice: '10.01' }
     state.trades = page([fill(0, { symbol: 'OKTA', qty: '27.44440023', price: '8' })])
@@ -233,7 +237,7 @@ for (const Client of [NodeClient, GasClient]) {
     assert.deepEqual(await client.getPortfolio(), portfolio)
   })
 
-  checkAutomatic('one global reserve covers every symbol and direct or capped monetary SELL path', async ({ client, calls, state }) => {
+  checkAutomatic('default global reserve covers every symbol and direct or capped monetary SELL path', async ({ client, calls, state }) => {
     for (const [row, quantity, expected] of [
       [rules(), '1.25', '1.249'],
       [oktaRules({ symbol: 'MSFT', stepSize: '0.000000003' }), '1.250000001', '1.249999989'],
@@ -293,7 +297,7 @@ for (const Client of [NodeClient, GasClient]) {
     assert.deepEqual(await client.getPortfolio(), portfolio)
   })
 
-  check('exact intents remain immutable when replayed on a globally buffered client', async ({ client, calls, state, errors }) => {
+  check('exact intents remain immutable when replayed on a client with default buffering', async ({ client, calls, state, errors }) => {
     state.rules = oktaRules({ symbol: 'MSFT' })
     state.quote = { bidPrice: '10', askPrice: '10.01' }
     let intent
@@ -302,7 +306,7 @@ for (const Client of [NodeClient, GasClient]) {
     assert.equal(intent.quantityMode, 'EXACT')
     assert.equal(intent.quantity, '1.250000000')
     const automatic = new Client({ API_KEY: 'dummy-key', API_SECRET: 'dummy-secret', baseUrl: client.baseUrl,
-      estimatedExitBuffer: '0.00000001', errorLogger: error => errors.push(error) })
+      errorLogger: error => errors.push(error) })
     await automatic.placeOrder(intent)
     assert.equal(calls.at(-1).payload.quantity, intent.quantity)
     assert.equal(calls.at(-1).payload.clientOrderId, intent.clientOrderId)
@@ -327,6 +331,19 @@ for (const Client of [NodeClient, GasClient]) {
     assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 3)
   })
 
+  check('a custom reserve replaces the default and aligns up to the current symbol step', async ({ client, calls, state }) => {
+    const automatic = new Client({ API_KEY: 'dummy-key', API_SECRET: 'dummy-secret', baseUrl: client.baseUrl,
+      errorLogger: client.errorLogger, estimatedExitBuffer: '0.0000000200' })
+    state.rules = oktaRules()
+    state.quote = { bidPrice: '10', askPrice: '10.01' }
+    await automatic.placeOrder({ symbol: 'OKTA', side: 'SELL', orderType: 'MARKET', quantity: '27.44440023' })
+    assert.equal(calls.at(-1).payload.quantity, '27.44440021')
+    state.rules.stepSize = '0.000000003'
+    await automatic.placeOrder({ symbol: 'OKTA', side: 'SELL', orderType: 'MARKET', quantity: '1.250000001' })
+    assert.equal(calls.at(-1).payload.quantity, '1.24999998')
+    assert.equal(calls.filter(call => call.path.endsWith('/place')).length, 2)
+  })
+
   checkAutomatic('automatic policies leave whole shares intact and reject unusable fractional reserves', async ({ client, calls, state }) => {
     state.rules = oktaRules()
     state.quote = { bidPrice: '10', askPrice: '10.01' }
@@ -345,6 +362,62 @@ for (const Client of [NodeClient, GasClient]) {
     const start = calls.length
     await assert.rejects(oversized.placeOrder({ symbol: 'OKTA', side: 'SELL', orderType: 'MARKET', quantity: '2.4' }), /buffer|reserve|whole.share/)
     assert.equal(calls.slice(start).filter(call => call.path.endsWith('/place')).length, 0)
+  })
+
+  checkAutomatic('wallet whole-share exits reject incompatible steps before quotes, IDs or submission', async ({ client, calls, state }) => {
+    state.quote = { symbol: 'OKTA', bidPrice: '10', askPrice: '10.01' }
+    let ids = 0
+    let callbacks = 0
+    client.createClientOrderId = () => { ids++; return randomUUID() }
+    for (const [quantity, stepSize] of [['3', '0.07'], ['100', '0.003'], ['3.000', '0.000000007'], ['3', '5']]) {
+      state.rules = oktaRules({ stepSize })
+      state.trades = page([fill(0, { symbol: 'OKTA', qty: quantity })])
+      const wallet = await client.getEquityWallet()
+      for (const orderType of ['MARKET', 'LIMIT']) {
+        const start = calls.length
+        await assert.rejects(client.placeOrder({ symbol: 'OKTA', side: 'SELL', orderType,
+          quantity: wallet.OKTA.amount, ...(orderType === 'LIMIT' ? { price: '10.00', tradingSession: 'RTH' } : {}),
+          beforeSubmit: () => { callbacks++ } }), /stepSize/)
+        assert.deepEqual(calls.slice(start).map(call => call.path.split('/').at(-1)), ['exchangeInfo'])
+      }
+    }
+    state.rules = oktaRules({ stepSize: '0.07' })
+    for (const options of [{ quantity: '3.000' }, { quantity: '3.5', maxSellQuantity: '3' }]) {
+      const start = calls.length
+      await assert.rejects(client.placeOrder({ symbol: 'OKTA', side: 'SELL', orderType: 'MARKET', ...options,
+        beforeSubmit: () => { callbacks++ } }), /stepSize/)
+      assert.deepEqual(calls.slice(start).map(call => call.path.split('/').at(-1)), ['exchangeInfo'])
+    }
+    assert.equal(ids, 0)
+    assert.equal(callbacks, 0)
+  })
+
+  checkAutomatic('wallet selling reports incompatible whole-share steps and continues with protected whole exits', async ({ client, calls, state }) => {
+    const positions = [
+      [oktaRules({ symbol: 'BAD_WHOLE', stepSize: '0.07' }), '3'],
+      [oktaRules({ symbol: 'WHOLE', stepSize: '0.003' }), '3.000'],
+      [oktaRules({ symbol: 'ROUNDED_WHOLE' }), '3.0000000001']
+    ]
+    state.trades = page(positions.map(([row, qty], index) => fill(index, { symbol: row.symbol, qty })))
+    state.handler = call => {
+      if (call.path.endsWith('/exchangeInfo')) return { symbols: positions.map(([row]) => row) }
+      if (call.path.endsWith('/quote')) return { symbol: call.payload.symbol, bidPrice: '10', askPrice: '10.01' }
+    }
+    let ids = 0
+    const intents = []
+    client.createClientOrderId = () => { ids++; return randomUUID() }
+    const results = await client.sellPositions(null, { beforeSubmit: order => { intents.push(order) } })
+    assert.equal(results[0].symbol, 'BAD_WHOLE')
+    assert.equal(results[0].quantity, '3')
+    assert.match(results[0].error.message, /stepSize/)
+    assert.deepEqual(results.slice(1).map(result => [result.symbol, result.quantity, result.ack.status]), [
+      ['WHOLE', '3', 'S'], ['ROUNDED_WHOLE', '3', 'S']
+    ])
+    const orders = calls.filter(call => call.path.endsWith('/place'))
+    assert.deepEqual(orders.map(call => [call.payload.symbol, call.payload.quantity]), [['WHOLE', '3'], ['ROUNDED_WHOLE', '3']])
+    assert.equal(ids, 2)
+    assert.equal(intents.length, 2)
+    assert.ok(intents.every(order => Object.isFrozen(order) && order.quantity === '3' && order.quantityMode === 'EXACT'))
   })
 
   checkAutomatic('global automatic buffering excludes BUYs and ordinary monetary targets', async ({ client, calls, state }) => {
@@ -406,7 +479,7 @@ for (const Client of [NodeClient, GasClient]) {
     await assert.rejects(client.placeOrder({ ...options, quantity: '27.4444002301' }), /exact stepSize increment/)
   })
 
-  check('explicit estimated-exit mode requires an applicable policy or manual buffering', async ({ client, calls, state }) => {
+  check('disabled automatic buffering requires a manual buffer for explicit estimated-exit mode', async ({ client, calls, state }) => {
     state.rules = oktaRules()
     state.quote = { bidPrice: '10', askPrice: '10.01' }
     const options = { symbol: 'OKTA', side: 'SELL', orderType: 'MARKET', quantity: '1.2500000001', quantityMode: 'ESTIMATED_EXIT' }
@@ -437,7 +510,7 @@ for (const Client of [NodeClient, GasClient]) {
 
   check('automatic reserves preserve current minimum, maximum, notional and tradability guards', async ({ client, calls, state }) => {
     const automatic = new Client({ API_KEY: 'dummy-key', API_SECRET: 'dummy-secret', baseUrl: client.baseUrl,
-      errorLogger: client.errorLogger, estimatedExitBuffer: '0.00000001' })
+      errorLogger: client.errorLogger })
     for (const [row, quantity, bidPrice, pattern] of [
       [muRules(), '0.005000009', '1000', /quantity is outside symbol bounds/],
       [spcxRules(), '500000.000000011', '1', /quantity is outside symbol bounds/],
@@ -454,7 +527,7 @@ for (const Client of [NodeClient, GasClient]) {
 
   check('automatic reserves preserve LIMIT fractional/session checks and MARKET field contracts', async ({ client, calls, state }) => {
     const automatic = new Client({ API_KEY: 'dummy-key', API_SECRET: 'dummy-secret', baseUrl: client.baseUrl,
-      errorLogger: client.errorLogger, estimatedExitBuffer: '0.00000001' })
+      errorLogger: client.errorLogger })
     state.quote = { bidPrice: '10', askPrice: '10.01' }
     for (const row of [nonfractionableRules(), regularOnlyRules()]) {
       state.rules = row
@@ -533,7 +606,7 @@ for (const Client of [NodeClient, GasClient]) {
     }
   })
 
-  check('explicit quantities stay exact unless sizing is opted in, using each fresh arbitrary step', async ({ client, calls, state }) => {
+  check('disabled automatic buffering preserves explicit quantities unless manual sizing applies, using fresh steps', async ({ client, calls, state }) => {
     const order = { symbol: 'AAPL', side: 'SELL', orderType: 'MARKET', quantity: '1.2341' }
     await assert.rejects(client.placeOrder(order), /exact stepSize increment/)
     state.rules.stepSize = '0.05'
