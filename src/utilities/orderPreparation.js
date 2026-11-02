@@ -85,7 +85,7 @@ export const placementPayload = (params) => {
   return payload
 }
 
-/** Fetch and validate one fresh rule snapshot for a logical placement. */
+/** Validate a separate rule snapshot from the client cache for each placement. */
 export const loadOrderRules = async (main, symbol) => {
   const rules = await main.getSymbolInfo(symbol)
   if (!rules || rules.symbol !== symbol || !['BUY_SELL', 'BUY', 'SELL', 'NONE'].includes(rules.tradability)) {

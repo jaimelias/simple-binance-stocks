@@ -1,3 +1,9 @@
 export const getExchangeInfo = async (main) => {
-   return await main.apiClient('exchangeInfo', {});
+
+   if(!main.exchangeInfo) {
+      return main.exchangeInfo = Object.freeze(await main.apiClient('exchangeInfo'));
+   }
+
+   return main.exchangeInfo;
+   
 }

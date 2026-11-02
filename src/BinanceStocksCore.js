@@ -16,6 +16,16 @@ import { getFundingWallet } from './getters/getFundingWallet.js'
 import { getPortfolio } from './getters/getPortfolio.js'
 import { estimatedExitBufferValue } from './utilities/prepareSellQuantity.js'
 
+const exchangeInfoRequests = new WeakMap()
+
+const freezeExchangeInfo = value => {
+  if (value !== null && typeof value === 'object') {
+    Object.values(value).forEach(freezeExchangeInfo)
+    Object.freeze(value)
+  }
+  return value
+}
+
 export default class BinanceStocksCore {
 
   constructor(options = {}) {
@@ -31,6 +41,9 @@ export default class BinanceStocksCore {
     this.baseUrl = baseUrl.replace(/\/+$/, '')
     this.API_KEY = options.API_KEY;
     this.API_SECRET = options.API_SECRET;
+
+    this.exchangeInfo = null;
+
   }
 
   static getNyMarketSession(date) {
@@ -42,7 +55,13 @@ export default class BinanceStocksCore {
   }
 
   async getExchangeInfo() {
-    return getExchangeInfo(this)
+    if (exchangeInfoRequests.has(this)) return exchangeInfoRequests.get(this)
+    if (this.exchangeInfo) return this.exchangeInfo
+    const request = getExchangeInfo(this)
+      .then(freezeExchangeInfo)
+      .finally(() => { exchangeInfoRequests.delete(this) })
+    exchangeInfoRequests.set(this, request)
+    return request
   }
 
   async getSymbolInfo(symbol) {
